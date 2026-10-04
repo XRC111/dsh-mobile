@@ -29,7 +29,11 @@ spawnSync(process.execPath, [path.join(import.meta.dirname, 'sync-desktop-plugin
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SOURCE = path.join(ROOT, 'desktop-plugins/@dsh-desktop/link');
-const DESKTOP = process.argv[2] ?? process.env.DSH_DESKTOP_ROOT ?? 'D:\\dsh\\DSH Desktop';
+// ⚠️ 不写死作者机器上的安装位置：优先命令行参数，其次环境变量，
+//    最后取「仓库同级目录下的 DSH Desktop」（多数开发者的布局）。
+const DESKTOP = process.argv[2]
+    ?? process.env.DSH_DESKTOP_ROOT
+    ?? path.resolve(ROOT, '..', 'DSH Desktop');
 const RESOURCES_PLUGINS = path.join(DESKTOP, 'resources/dsh-plugins');
 const PATCH = path.join(DESKTOP, 'resources/desktop-patch.yml');
 const HOME = process.env.DSH_HOME ?? path.join(os.homedir(), 'AppData/Roaming/DSH-Desktop/dsh-home');
