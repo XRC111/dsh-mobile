@@ -20,6 +20,7 @@
     "sync:link": "node scripts/sync-link-protocol.mjs",
     "sync:desktop-plugin": "node scripts/sync-desktop-plugin.mjs",
     "install:desktop-link": "node scripts/install-desktop-link.mjs",
-    "fetch:addon": "node scripts/fetch-addon.mjs"
+    "fetch:addon": "node scripts/fetch-addon.mjs",
+    "test:link-stream": "node packages/dsh-link-protocol/test/stream.test.mjs"
   }
 }

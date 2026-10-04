@@ -43,6 +43,8 @@ const FILES = [
     //    让「加文件忘了同步」在本地就暴露，而不是等到用户点开设置页发现白屏。
     'lib/link-protocol/routes.js',
     'lib/link-protocol/netinfo.js',
+    'lib/link-protocol/llmrelay.js',
+    'lib/link-protocol/relayexec.js',
 ];
 
 /**

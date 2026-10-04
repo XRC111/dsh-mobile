@@ -18,7 +18,7 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SOURCE = path.join(ROOT, 'packages/dsh-link-protocol/lib');
-const FILES = ['protocol.js', 'connection.js', 'endpoint.js', 'secret.js', 'routes.js', 'netinfo.js'];
+const FILES = ['protocol.js', 'connection.js', 'endpoint.js', 'secret.js', 'routes.js', 'netinfo.js', 'llmrelay.js', 'relayexec.js'];
 const TARGETS = [
     path.join(ROOT, 'desktop-plugins/@dsh-desktop/link/lib/link-protocol'),
     path.join(ROOT, 'plugins/@dsh-android/link/lib/link-protocol'),
