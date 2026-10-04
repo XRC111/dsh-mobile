@@ -1,0 +1,19 @@
+{
+  "name": "@dsh-android/diag",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android compatibility diagnostics for DSH: probes native addon loadability, paths, worker threads, and filesystem semantics from inside the running app.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "os": [
+    "android"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": "*"
+  }
+}

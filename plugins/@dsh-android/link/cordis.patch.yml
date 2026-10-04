@@ -1,0 +1,5 @@
+# @dsh-android/link 的挂载补丁。
+#
+# 单独放一份是为了跟其它外壳插件保持一致（由 launcher 落位后由 android-patch.yml 插入）。
+# 这里不写 disabled/insert —— 由主补丁文件 android-patch.yml 统一编排顺序。
+[]

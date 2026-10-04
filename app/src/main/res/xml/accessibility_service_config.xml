@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  无障碍服务配置。
+
+  canPerformGestures  点击/滑动（dispatchGesture）
+  canTakeScreenshot   API 30+ 的 takeScreenshot，不需要 MediaProjection 授权
+  canRetrieveWindowContent  读节点树（界面元素 + 精确坐标）
+  canRetrieveInteractiveWindows  能拿到弹窗/多窗口，否则只看得到当前活动窗口
+
+  eventTypes 只订阅窗口变化：模型是「看一眼→动一下→再看一眼」的同步节奏，
+  不需要事件流，订阅太多只会白耗电。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagReportViewIds"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
+    android:description="@string/a11y_service_description"
+    android:notificationTimeout="100"
+    android:summary="@string/a11y_service_summary" />

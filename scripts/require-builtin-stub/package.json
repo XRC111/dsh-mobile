@@ -1,0 +1,13 @@
+{
+  "name": "node-addon-require-builtin",
+  "version": "0.1.6",
+  "description": "Android stub of node-addon-require-builtin for dsh-android (pure-JS fallback to require() under --expose-internals)",
+  "main": "./index.cjs",
+  "exports": {
+    ".": {
+      "require": "./index.cjs",
+      "default": "./index.cjs"
+    },
+    "./package.json": "./package.json"
+  }
+}

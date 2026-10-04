@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DSH</string>
+    <string name="notif_channel">DSH 引擎</string>
+    <string name="a11y_service_summary">让 DSH 读取屏幕并模拟点击、滑动、输入</string>
+    <string name="a11y_service_description">开启后，DSH 的 mobile_use 工具可以截屏、读取界面元素（含精确坐标）并模拟点击/滑动/输入，用于代替你操作手机。关闭即完全停用该能力。</string>
+</resources>

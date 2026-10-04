@@ -1,0 +1,12 @@
+{
+  "name": "@dsh-link/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH 远程联动共享协议：NDJSON 分帧、消息类型、方法名表。",
+  "main": "./lib/protocol.js",
+  "exports": {
+    ".": "./lib/protocol.js",
+    "./package.json": "./package.json"
+  }
+}

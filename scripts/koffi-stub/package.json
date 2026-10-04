@@ -1,0 +1,6 @@
+{
+  "name": "koffi",
+  "version": "2.12.2",
+  "description": "Android stub of koffi for dsh-android (native FFI unavailable; Win32 paths are never invoked on Android)",
+  "main": "./index.cjs"
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@dsh-android/bash-mksh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android shell executor for DSH: runs commands with mksh (/system/bin/sh) because Android ships no bash.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "os": [
+    "android"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-bash-sandbox": "*",
+    "@deepseek-ai/dsh-subprocess": "*"
+  }
+}

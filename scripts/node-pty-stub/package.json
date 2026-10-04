@@ -1,0 +1,6 @@
+{
+  "name": "node-pty",
+  "version": "1.2.0-beta.15",
+  "description": "Android stub of node-pty for dsh-android (no prebuilt pty.node; real port is a TODO)",
+  "main": "./lib/index.js"
+}

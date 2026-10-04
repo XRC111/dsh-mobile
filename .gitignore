@@ -1,0 +1,45 @@
+# ── 构建产物 ───────────────────────────────────────────────────────────────
+.gradle/
+# 本仓库内建的 Gradle home（build-apk.mjs 的兜底位置）
+.gradle-home/
+build/
+app/build/
+.kotlin/
+# Native 构建缓存（CMake/ninja 的中间产物）
+.cxx/
+app/.cxx/
+*.o
+*.ninja_deps
+*.ninja_log
+*.apk
+*.aab
+
+# ── 本地配置（含机器专属路径，绝不能进仓库）────────────────────────────────
+local.properties
+gradle.properties.bak
+
+# ── 依赖 ───────────────────────────────────────────────────────────────────
+node_modules/
+
+# ── 大体积构建输入（由脚本重建，进仓库会让 clone 变成 1.5GB）───────────────
+#
+# ⚠️ 这三项是**构建输入**而不是源码。它们都能再生成，且合计超过 200MB：
+#   dsh-runtime.bin   43.9MB  ← tools 侧运行时的 tar.gz，由 pack-runtime.mjs 从
+#                              dsh-desktop 的 resources/dsh-runtime 打包而来
+#   libnode.so        83.6MB  ← Node 运行时，来自 .vendor/nodejs-mobile-android
+#   .vendor/         317.2MB  ← 上面的 zip 与解压产物
+# clone 后按 README「首次构建」补齐即可。
+app/src/main/assets/bundle/dsh-runtime.bin
+app/src/main/assets/bundle/dsh-runtime.tar.gz
+app/src/main/assets/bundle/dsh-runtime.tar
+app/src/main/jniLibs/**/libnode.so
+.vendor/
+
+# 外壳插件在打包时的落位副本（源在 plugins/，这里是 pack-runtime 复制出来的）
+app/src/main/assets/bundle/plugins/
+
+# ── 杂项 ───────────────────────────────────────────────────────────────────
+*.log
+*.linkbak
+.DS_Store
+Thumbs.db

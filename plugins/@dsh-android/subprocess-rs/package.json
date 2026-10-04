@@ -1,0 +1,22 @@
+{
+  "name": "@dsh-android/subprocess-rs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android subprocess Service Provider for DSH, backed by the @rs-cross-spawn/android-arm64 native addon.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "os": [
+    "android"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-subprocess": "*"
+  },
+  "dependencies": {
+    "@rs-cross-spawn/android-arm64": "0.1.4"
+  }
+}

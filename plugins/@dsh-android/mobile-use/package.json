@@ -1,0 +1,19 @@
+{
+  "name": "@dsh-android/mobile-use",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile use for DSH Android: screenshot, UI element listing, and synthetic touch/input via an AccessibilityService.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "os": [
+    "android"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": "*"
+  }
+}

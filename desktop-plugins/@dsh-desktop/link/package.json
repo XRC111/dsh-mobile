@@ -1,0 +1,27 @@
+{
+  "name": "@dsh-desktop/link",
+  "version": "1.0.0",
+  "description": "DSH 远程联动（桌面侧）：在局域网提供服务，供手机配对；双向设备操作、文件互通、会话与模型共用。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": "./client/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client"
+  ],
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}

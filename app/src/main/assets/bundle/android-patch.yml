@@ -1,0 +1,197 @@
+# DSH Android 适配补丁
+#
+# 由 launcher.cjs 通过 `--patch <此文件>` 叠加在 web profile 之上，
+# 与桌面外壳的 desktop-patch.yml 同一套机制（不修改 Harness 源码）。
+#
+# 补丁会「整体替换」目标行的 config，禁用某行写 disabled: true 即可。
+
+# ── 1) 关闭模块热重载（HMR） ────────────────────────────────────────────────
+# 该插件要求 Node 以 --expose-internals 启动；嵌入式 Node 无法注入该 flag，
+# 且 Android 上没有开发期热重载需求（桌面版同理，桌面 patch 已验证安全）。
+- id: hmr
+  disabled: true
+
+# ── 2) 关闭会话遥测 ────────────────────────────────────────────────────────
+# 桌面版同理：默认不上报，且切断 @opentelemetry/* 深层依赖
+# （那是启动崩溃的最大来源）。
+- id: session-telemetry-otel
+  disabled: true
+
+# ── 3) 本地附件：**保持启用**（sharp 走 stub） ──────────────────────────────
+# dsh-attachment-local 顶层 import sharp，而 libvips 没有 Android 预编译。
+# 但**不能因此禁用整个插件** —— ctx.attachments 只有它提供，一旦禁用，
+# 依赖它的整条链全部 pending：
+#   session-controller → file-upload / ui-deliverables / 会话创建
+# 实测症状是新建会话直接失败：
+#   gateway/service-unavailable: session/create:
+#   active Service "sessionController" is unavailable
+#
+# 正确做法是 pack-runtime 注入的 sharp stub（透传式变换，无 libvips）：
+# attachment-local 能正常加载，图片压缩退化为透传，其余功能照常。
+# 已实测该插件在 stub 下 import 成功（22 个导出）。
+
+# ── 3b) 子进程 Provider：**保持 dsh-subprocess-local**（不再替换） ─────────────
+#
+# 这里曾经把 subprocess 换成自研的 @dsh-android/subprocess-rs（基于
+# @rs-cross-spawn/android-arm64 原生 addon）。现在改回原生的 dsh-subprocess-local。
+#
+# 【为什么改回来】当初替换的前提是「Android 上不能用 child_process.spawn」。
+# 那个前提**是错的** —— 它把两件事混成了一件：
+#   · Android 10 禁的是 **app 私有目录内**的可执行文件（execve 被拒）；
+#   · 而 /system/bin/sh、toybox 这些在**系统分区**，本来就能 exec。
+#
+# 设备实测（v0.2.1 的 launcher 启动自检）：
+#   native self-check: child_process /system/bin/sh -> status=0
+#                      stdout="CHILD_OK\n10130"
+# 也就是说 node:child_process → libuv → posix_spawn 完全可用。
+#
+# 【换回来的收益】运行时里**不再有任何原生 addon**：
+#   · rs-cross-spawn.node 有 41 个未解析的 napi_* 符号，在嵌入式 libnode 下
+#     dlopen 必然失败（libnode 是从 APK 直接映射的，DT_NEEDED "libnode.so"
+#     根本解析不到）；
+#   · 那是交付物里最后一个原生文件，去掉它 = 去掉整类「只在设备上暴露」的失败。
+#
+# 【原加载障碍已解决】dsh-subprocess-local 过去挂在两处，现在都不成问题：
+#   · node-pty 顶层 import → pack-runtime 注入 stub，且实际是 createLazyRequire
+#     懒加载，只有终端功能才碰；
+#   · @deepseek-ai/dsh-win32-process（koffi）→ 已有空壳包，且只在 win32 分支用。
+# 已实测该 Provider 在 stub 下 import 成功。
+#
+# 【保留的限制】没有 PTY 时终端类功能不可用；但 bash 工具走的是非终端 spawn 路径，
+# 不受影响。bash-mksh（见 3d）仍然基于它提供 ctx.subprocess 的 shell 执行。
+
+# ── 3c) 沙箱模式：Android 上没有可用的 confinement 后端 ─────────────────────
+#
+# dsh-sandbox-local 的 Linux 链是 bwrap → landlock：Android 上两者都不存在
+# （无 bwrap 二进制；landlock 需要内核 + 沙箱外的启动器），confine() 会**fail
+# closed** 抛 SANDBOX_UNAVAILABLE。也就是说：默认 workspace-write 模式下，
+# 每条 bash 命令都会以“沙箱不可用”失败。
+#
+# 因此这里把默认模式钉成 danger-full-access —— 这是**如实声明**而非放宽：
+# Android 应用沙箱（独立 uid + SELinux 域）本身就是真正的边界，DSH 自己的
+# 文件策略在这个平台上没有内核手段可强制。同时 approval 随之变成 never
+# （base 补丁自己的表达式），因为已经没有“更宽的模式”可供升级审批。
+#
+# 仍尊重 DSH_PERMISSION_MODE 环境变量，便于实机验证时改回 workspace-write
+# 观察 fail-closed 行为。
+#
+# ⚠️ !!js 里带三元表达式必须**整体加引号**：`policy: !!js cond ? 'a' : 'b'`
+# 里的 `: 'b'` 会被 YAML 当成紧凑映射的 key，报 "Nested mappings are not allowed"
+# 或解析成 {"[object Object]": ...}，结果 approval 整条 ValidationError。
+- id: sandbox-policy
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'danger-full-access'
+    workspaceRoot: !!js process.cwd()
+
+- id: approval
+  config:
+    policy: !!js "(process.env.DSH_PERMISSION_MODE ?? 'danger-full-access') === 'danger-full-access' ? 'never' : 'ask'"
+
+# ── 3d) shell 执行器：Android 没有 bash，改用系统 mksh ─────────────────────
+#
+# dsh-bash-local 把 argv 硬编码成 ['bash','-c',command]（lib/index.js:142），而
+# dsh-bash-sandbox 只是继承它、不改 argv —— 也就是说沙箱分支同样写死 bash。
+# Android 根本没有 bash：系统 shell 是 mksh，挂在 /system/bin/sh。所以每条 bash
+# 工具调用都会以“找不到可执行文件”失败。
+#
+# 换成 @dsh-android/bash-mksh：只改 shell 二进制这一件事，executeArgv（输出预算、
+# spill、SIGTERM→SIGKILL 阶梯、deadline、结果装饰）全部复用 harness 自己的实现。
+# danger-full-access 分支由继承来的 SandboxBashExecutor 委派给 super.execute()，
+# 因此覆盖这一个方法就能同时改掉受限与不受限两条路径，不复制任何沙箱逻辑。
+#
+# 与桌面一致：原行不能改 name（loader 校验 name 不一致会跳过整条），只能
+# disabled + insert。
+- id: bash-sandbox
+  disabled: true
+
+- insert:
+    - id: bash-mksh
+      name: '@dsh-android/bash-mksh'
+# ⚠️ pwsh-sandbox 也必须显式禁用：base profile 里它按 `disabled:
+#    process.platform !== 'win32'` 判定，Android 上本应为 true（禁用），但
+#    ctx.shell 只有一个实现，被它先注册上之后 bash-mksh 只能报
+#    service "shell" has been registered at <SandboxPwshExecutor>。
+#    显式钉死，省得依赖 platform 判定的隐式行为。
+- id: pwsh-sandbox
+  disabled: true
+# ── 3e) mobile_use：无障碍服务操作手机 ──────────────────────────────────────
+#
+# 对应桌面版的 @dsh-desktop/computer-use。工具名与桌面保持一致
+# （screen_shot / screen_elements / mouse_click / key_press / key_type），
+# 模型在两端的行为习惯可以直接迁移。
+#
+# 宿主侧是 MobileUseService（AccessibilityService），与 Node 插件同进程但没有
+# JS↔Java 通道，所以走文件桥（filesDir/mobile-use/ 下 req/res 请求响应）。
+# 详见该服务与 plugins/@dsh-android/mobile-use/lib/bridge.js 的注释。
+#
+# ⚠️ 默认只注册只读工具（截图/元素/状态）。要让模型能点击和输入，
+#    把下面的 allowInput 改成 true —— 那意味着它能代替你操作整台手机。
+#    另外无障碍服务本身也只能由用户在系统设置里手动开启，这是第二道闸。
+- insert:
+    - id: mobile-use
+      name: '@dsh-android/mobile-use'
+      config:
+        allowInput: true
+# ── 3f) 插件管理器：Android 上无法工作，显式关闭 ────────────────────────────
+#
+# dsh-plugin-manager 的每一步（inspect / install / repair）都是
+#   execa('pnpm', [...])
+# 也就是说它需要一个**可执行的包管理器**。Android 上这条路是死的：
+#   1. 运行时里根本没有 pnpm；
+#   2. 就算有，app 主目录（/data/user/0/<pkg>/files）在 Android 10+ 禁 exec；
+#   3. 运行时里也没有 node CLI —— libnode.so 是库、不是可执行文件，
+#      所以「用 node 跑 pnpm.js」这条路同样不通。
+#
+# 实测症状：在「添加插件」里输入包名，报
+#   Command failed with EACCES: pnpm view … spawn pnpm EACCES
+#
+# 关闭是安全的：消费方都写成 `ctx.get('pluginManager') === undefined ? {} :`
+#   （见 dsh-host-plugin-inventory），少了它只是 UI 显示
+#   managementAvailable=false，不会有连锁 pending。
+#
+# 要装插件请走**构建期**：把插件包放进本仓库 plugins/<scope>/<name>/，
+# pack-runtime 会随外壳插件一起落位（见 README「装插件」一节）。
+- id: plugin-manager
+  disabled: true
+# ── 3g) Android 兼容性诊断（android_diag 工具）───────────────────────────────
+#
+# 排查用的只读工具：实际 dlopen 每个原生插件、打印运行时路径、确认 libnode 映射、
+# 测 worker 线程与文件系统语义（硬链接/独占创建）、确认 child_process 陷阱。
+#
+# 为什么需要它：开发机是 Windows/x64，加载不了 arm64 的 .node，也复现不了
+# Android 的 SELinux 行为 —— 前几轮排查只能「改一版 → 装机 → 看报错 → 再猜」。
+# 装上它之后，模型可以直接在设备上问出确定答案。
+#
+# napi 符号解析尤其如此：失败只在**真正 dlopen 时**才暴露，构建期查不出来。
+- insert:
+    - id: diag
+      name: '@dsh-android/diag'
+# ── 3h) 远程联动（手机侧）─────────────────────────────────────────────────────
+#
+# 让手机与桌面互为「远程设备」：
+#   link_connect        用桌面上的 6 位配对码连过去（之后用令牌自动重连）
+#   desktop_*           操作桌面（状态/截图/窗口/点击/输入/按键）
+#   desktop_sessions    列出并读取桌面会话
+#   link_push_file      把手机文件推到桌面工作区
+#   link_pull_model     从桌面拉取模型配置（凭据走会话密钥加密）
+#
+# 同时它把手机的 mobile.* 能力**暴露给桌面**，复用已有的 mobile-use 文件桥 ——
+# 无障碍实现只有一份，不重写。
+#
+# 协议与桌面侧（@dsh-desktop/link）共享同一份源码副本（scripts/sync-link-protocol.mjs），
+# 副本漂移会被 scripts/link-protocol-copies.test.mjs 抓住。
+- insert:
+    - id: link
+      name: '@dsh-android/link'
+# ── 4) 目录选择：钉到 browse ────────────────────────────────────────────────
+# Windows 上默认解析成 native（弹 COM 对话框）；Android 没有 native 实现，
+# 显式钉到 browse（纯 fs 实现）：列出目录 + 可编辑路径 + 新建文件夹。
+# 注意：不能只挂 host 端 —— 交互由 host + client 一对组成。
+- id: directory-picker
+  disabled: true
+
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
