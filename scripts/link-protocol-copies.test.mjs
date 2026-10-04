@@ -43,7 +43,8 @@ test('dsh-desktop 仓库里的分发副本与规范源一致', () => {
     // 规范源在 dsh-android/desktop-plugins，分发副本在 dsh-desktop/resources/dsh-plugins。
     // 两边不一致的表现是「功能时好时坏」，最难查，所以逐字节比对。
     // 找不到 dsh-desktop 仓库时跳过（不是所有机器上都有这个仓库）。
-    const repo = process.env.DSH_DESKTOP_REPO ?? 'D:\\\\code\\\\dsh-desktop';
+    // 默认取仓库的同级目录 —— 不写死作者机器上的路径。
+    const repo = process.env.DSH_DESKTOP_REPO ?? path.resolve(ROOT, '..', 'dsh-desktop');
     const copy = path.join(repo, 'resources/dsh-plugins/link');
     if (!fs.existsSync(copy)) {
         console.log('  （跳过：找不到 ' + copy + '）');
