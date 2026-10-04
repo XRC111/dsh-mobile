@@ -42,6 +42,7 @@ const FILES = [
     //    而 link-protocol-copies.test.mjs 会立刻报「分发副本缺 ...」。这个断言就是为了
     //    让「加文件忘了同步」在本地就暴露，而不是等到用户点开设置页发现白屏。
     'lib/link-protocol/routes.js',
+    'lib/link-protocol/netinfo.js',
 ];
 
 /**

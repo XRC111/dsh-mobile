@@ -13,6 +13,7 @@
     "test:mobile-use": "node plugins/@dsh-android/mobile-use/test/bridge.test.mjs",
     "test:hardlinks": "node scripts/patch-hardlinks.test.mjs",
     "test:link": "node packages/dsh-link-protocol/test/link.test.mjs",
+    "test:link-netinfo": "node packages/dsh-link-protocol/test/netinfo.test.mjs",
     "test:link-integration": "node scripts/link-integration.test.mjs",
     "test:link-copies": "node scripts/link-protocol-copies.test.mjs",
     "audit:native": "node scripts/audit-native.mjs",

@@ -57,7 +57,12 @@ data class LinkSnapshot(
     val savedPort: Int = 0,
     val hasToken: Boolean = false,
     val error: String? = null,
-)
+    /** 连接方式：direct（直连）或 forward（端口转发）。 */
+    val mode: String = "direct",
+) {
+    /** 中文名，直接显示在卡片上。 */
+    val modeLabel: String get() = if (mode == "forward") "端口转发" else "直连"
+}
 
 /** 外壳页的回调集合（用 lambda 而不是传 Activity，界面层不认识 Activity）。 */
 data class ShellActions(
@@ -186,9 +191,10 @@ fun ShellScreen(state: ShellState, actions: ShellActions) {
                             state.link.error != null -> state.link.error
                             state.link.connected ->
                                 "已连接：" + state.link.desktopName +
-                                    "\n可用 desktop_* 工具操作桌面"
+                                    "\n" + state.link.modeLabel +
+                                    " · 可用 desktop_* 工具操作桌面"
                             state.link.savedHost.isNotEmpty() ->
-                                "未连接 —— 上次连过 " + state.link.savedHost +
+                                "未连接 —— 上次 " + state.link.modeLabel + " 连过 " + state.link.savedHost +
                                     if (state.link.hasToken) "（可直接重连）" else "（需要配对码）"
                             else -> "未连接 —— 需要桌面上的配对码"
                         },

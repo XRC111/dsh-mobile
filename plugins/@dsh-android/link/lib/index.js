@@ -33,6 +33,64 @@ import { MOBILE_METHODS, DEFAULT_PORT, fileChunks } from './link-protocol/protoc
 import { open } from './link-protocol/secret.js';
 import { registerRoutes } from './link-protocol/routes.js';
 
+/**
+ * 连接方式。
+ *
+ * 两种方式在**网络层没有区别** —— 都是往某个 host:port 发一个 TCP 连接。
+ * 区分它们是**为了在填错时能立刻指出**：
+ *   · 直连：填桌面的真实地址（局域网 IP / 公网 IPv6 / 组网工具的虚拟 IP）
+ *   · 端口转发：EasyTier 的 --port-forward（或 ssh -L）把远端端口映射成了
+ *     **本机**的一个端口，这时必须填 127.0.0.1。
+ *
+ * 把这两种搞混是最容易犯的错（填了 127.0.0.1 却没开转发 → 连到手机自己 → 报
+ * 「连接被拒绝」，而用户完全看不出为什么）。所以这里做交叉校验，报错说清原因。
+ */
+const MODES = {
+    direct: {
+        id: 'direct',
+        label: '直连',
+        hint: '填桌面的真实地址：局域网 IP、公网 IPv6，或组网工具给的虚拟 IP。',
+    },
+    forward: {
+        id: 'forward',
+        label: '端口转发',
+        hint: '把远端端口映射到了本机（如 EasyTier --port-forward），这里填 127.0.0.1 与映射出来的本地端口。',
+    },
+};
+
+/**
+ * 判断地址是否是本机回环。
+ * @param {string} host - 地址。
+ * @returns {boolean} 是否回环。
+ */
+function isLoopback(host) {
+    const h = String(host ?? '').trim().toLowerCase();
+    return h === '127.0.0.1' || h === 'localhost' || h === '::1' || h.startsWith('127.');
+}
+
+/**
+ * 交叉校验「连接方式」与填的地址是否自洽。
+ *
+ * 这是本功能的主要价值：两种模式填错的表现都是「连不上」，而原因完全不同。
+ * 与其让用户对着 "ECONNREFUSED" 猜，不如在发起连接前就说明白。
+ *
+ * @param {string} mode - 'direct' | 'forward'。
+ * @param {string} host - 用户填的地址。
+ * @returns {string|null} 警告文案；自洽时返回 null。
+ */
+function validateMode(mode, host) {
+    if (mode === 'forward' && !isLoopback(host)) {
+        return '端口转发模式下应该填 127.0.0.1 —— 转发是把远端端口映射到**本机**，'
+            + '所以你连的是本机地址。你填的是 ' + host + '。'
+            + '如果确实要直连桌面，请把连接方式改成「直连」。';
+    }
+    if (mode === 'direct' && isLoopback(host)) {
+        return '直连模式下填了回环地址 —— 这会连到手机自己，不是桌面。'
+            + '如果你已经用 EasyTier/ssh 把桌面端口映射到了本机，请把连接方式改成「端口转发」。';
+    }
+    return null;
+}
+
 const textOut = (props) => ({
     schema: { type: 'object', additionalProperties: false, properties: props },
     render: (_args, value) => [
@@ -133,7 +191,14 @@ function apply(ctx, config = {}) {
         await loadSaved();
         const host = args.host ?? state.saved.host;
         const port = args.port ?? state.saved.port ?? DEFAULT_PORT;
+        // 连接方式：没传就沿用上次的（或按地址猜一个合理默认）。
+        const mode = MODES[args.mode] ? args.mode : (state.saved.mode ?? (isLoopback(host) ? 'forward' : 'direct'));
         if (!host) throw new Error('需要 host（桌面地址）。先在桌面上跑 link_host_start，它会列出地址。');
+        // 交叉校验：填错时立刻说清，而不是等一个 ECONNREFUSED。
+        const warning = validateMode(mode, host);
+        if (warning && args.strict !== false) {
+            throw new Error(warning);
+        }
         const code = args.code;
         const token = code ? undefined : state.saved.token;
         if (!code && !token) throw new Error('第一次配对需要在桌面上拿配对码，然后用 link_connect 传 code。');
@@ -148,11 +213,14 @@ function apply(ctx, config = {}) {
         state.conn = conn;
         conn.on('close', () => { if (state.conn === conn) state.conn = null; });
         registerMobileMethods(conn);
-        // 桌面对首次配对会发放长期令牌，存下来供重连。
-        await save({ host, port, ...(conn.issuedToken ? { token: conn.issuedToken } : {}) });
+        // 桌面对首次配对会发放长期令牌，存下来供重连。mode 也一起存，
+        // 这样重连时不必再问用户"上次是怎么连的"。
+        await save({ host, port, mode, ...(conn.issuedToken ? { token: conn.issuedToken } : {}) });
         return {
             connected: true,
             host, port,
+            mode,
+            modeLabel: MODES[mode].label,
             desktop: conn.peer,
             encrypted: Boolean(conn.sessionKey),
             issuedToken: Boolean(conn.issuedToken),
@@ -175,8 +243,10 @@ function apply(ctx, config = {}) {
             desktopMethods: state.conn?.peerMethods ?? [],
             savedHost: state.saved.host ?? null,
             savedPort: state.saved.port ?? null,
+            mode: state.saved.mode ?? 'direct',
+            modeLabel: MODES[state.saved.mode ?? 'direct'].label,
+            modeHint: MODES[state.saved.mode ?? 'direct'].hint,
             hasToken: Boolean(state.saved.token),
-            /** 手机上能不能操作桌面的输入（桌面 computer-use 的 allowInput）。 */
             note: state.conn ? null : '未连接。先填桌面地址与配对码。',
         };
     }
@@ -192,7 +262,7 @@ function apply(ctx, config = {}) {
     const tools = [
         {
             name: 'link_connect',
-            description: '连接到桌面并配对。首次需要桌面上的 6 位配对码（link_host_start 会给）；之后只写 host/port 就会用已保存的令牌自动重连。',
+            description: '连接到桌面并配对。首次需要桌面上的 6 位配对码（link_host_start 会给）；之后只写 host/port 就会用已保存的令牌自动重连。mode=forward 时表示走端口转发（如 EasyTier），host 应填 127.0.0.1。',
             parameters: {
                 host: { type: 'string', description: '桌面在局域网上的地址，如 192.168.1.10。' },
                 port: { type: 'integer', description: '端口，默认 45731。' },

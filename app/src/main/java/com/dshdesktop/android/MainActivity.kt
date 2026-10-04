@@ -277,6 +277,7 @@ class MainActivity : AppCompatActivity() {
                     savedHost = v.optString("savedHost"),
                     savedPort = v.optInt("savedPort"),
                     hasToken = v.optBoolean("hasToken", false),
+                    mode = v.optString("mode", "direct"),
                 )
             } catch (e: Exception) {
                 LinkSnapshot(error = e.message)
@@ -311,16 +312,35 @@ class MainActivity : AppCompatActivity() {
             hint = "6 位配对码（已在桌面配过就留空）"
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
+        // 连接方式：两种方式填错时的报错都是"连不上"，原因却完全相反，
+        // 所以让用户显式选，并在填错时由插件端给出明确说明。
+        val modeDirect = android.widget.RadioButton(this).apply {
+            text = "直连（填桌面真实地址）"
+            isChecked = saved.mode != "forward"
+        }
+        val modeForward = android.widget.RadioButton(this).apply {
+            text = "端口转发（EasyTier 等映射到本机，地址填 127.0.0.1）"
+            isChecked = saved.mode == "forward"
+        }
+        val group = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            addView(modeDirect)
+            addView(modeForward)
+        }
         val box = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, 0)
+            addView(group)
             addView(host)
             addView(port)
             addView(code)
         }
         android.app.AlertDialog.Builder(this)
             .setTitle("连接桌面")
-            .setMessage("在桌面上跑 link_host_start，把地址、端口和 6 位配对码填到这里。")
+            .setMessage(
+                "直连：在桌面上跑 link_host_start，把地址、端口和 6 位配对码填到这里。\n\n"
+                    + "端口转发：先用 EasyTier 的 --port-forward 把桌面端口映射到本机，这里填 127.0.0.1。"
+            )
             .setView(box)
             .setPositiveButton("连接") { _, _ ->
                 val h = host.text.toString().trim()
@@ -330,22 +350,23 @@ class MainActivity : AppCompatActivity() {
                     toast("请填桌面地址")
                     return@setPositiveButton
                 }
-                linkConnect(h, p, c)
+                linkConnect(h, p, c, if (modeForward.isChecked) "forward" else "direct")
             }
             .setNegativeButton("取消", null)
             .show()
     }
 
     /** 真正发起配对（后台线程）。 */
-    private fun linkConnect(host: String, port: Int, code: String) {
+    private fun linkConnect(host: String, port: Int, code: String, mode: String) {
         val url = NodeState.state.value.url
-        linkSnapshot.value = LinkSnapshot(savedHost = host, savedPort = port)
+        linkSnapshot.value = LinkSnapshot(savedHost = host, savedPort = port, mode = mode)
         pushShellState(NodeState.state.value)
         Thread {
             val snap = try {
                 val body = JSONObject().apply {
                     put("host", host)
                     put("port", port)
+                    put("mode", mode)
                     if (code.isNotEmpty()) put("code", code)
                 }
                 val v = LinkClient.call(url, "/connect", body)
@@ -355,9 +376,10 @@ class MainActivity : AppCompatActivity() {
                     savedHost = host,
                     savedPort = port,
                     hasToken = true,
+                    mode = v.optString("mode", mode),
                 )
             } catch (e: Exception) {
-                LinkSnapshot(savedHost = host, savedPort = port, error = e.message)
+                LinkSnapshot(savedHost = host, savedPort = port, mode = mode, error = e.message)
             }
             runOnUiThread {
                 linkSnapshot.value = snap
