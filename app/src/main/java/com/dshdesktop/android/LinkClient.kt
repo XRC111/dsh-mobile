@@ -1,5 +1,6 @@
 package com.dshdesktop.android
 
+import android.util.Log
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.net.HttpURLConnection
@@ -31,6 +32,9 @@ import java.net.URL
  * 全部是阻塞 IO，必须在**后台线程**调用（外壳页用 Thread 包一层）。
  */
 object LinkClient {
+
+    /** logcat 标签。排查时：adb logcat -s DshLink */
+    private const val TAG = "DshLink"
 
     /** 从 dsh 的 URL（含 ?token=）里解析出 base 与 token。 */
     private data class Base(val origin: String, val token: String?)
@@ -71,8 +75,22 @@ object LinkClient {
             }
             try {
                 // 只看头，不读 body（首页是几 MB 的 JS，没必要拉）。
-                val cookies = conn.headerFields["Set-Cookie"].orEmpty()
-                val value = cookies.firstOrNull { it.startsWith("dsh-auth-") } ?: return null
+                //
+                // ⚠️ Set-Cookie 的取法有坑：headerFields 的键是**实际大小写**，
+                //    而且多个 Set-Cookie 各占一项。这里两种取法都试，并把结果打进
+                //    日志 —— 拿不到 cookie 时报错只有一句「无法取得本地会话」，
+                //    不给日志根本没法定位。
+                val map = conn.headerFields
+                val byExact = map["Set-Cookie"].orEmpty()
+                val byLower = map.entries
+                    .firstOrNull { it.key?.equals("set-cookie", ignoreCase = true) == true }
+                    ?.value.orEmpty()
+                val cookies = (byExact + byLower).distinct()
+                Log.i(TAG, "cookie exchange: HTTP " + conn.responseCode + ", setCookie=" + cookies.size)
+                val value = cookies.firstOrNull { it.startsWith("dsh-auth-") } ?: run {
+                    Log.w(TAG, "没有 dsh-auth-* cookie；收到的前缀=" + cookies.take(3).map { it.take(30) })
+                    return null
+                }
                 value.substringBefore(';')
             } finally {
                 conn.disconnect()
@@ -106,7 +124,9 @@ object LinkClient {
         val cookie = sessionCookie(base)
             ?: throw IllegalStateException("无法取得本地会话（引擎可能刚重启，稍后再试）")
 
-        val conn = (URL(base.origin + "/api/dsh-link" + path).openConnection() as HttpURLConnection).apply {
+        val target = base.origin + "/api/dsh-link" + path
+        Log.i(TAG, "call " + target)
+        val conn = (URL(target).openConnection() as HttpURLConnection).apply {
             requestMethod = if (body == null) "GET" else "POST"
             connectTimeout = 5000
             readTimeout = 8000
@@ -121,9 +141,11 @@ object LinkClient {
                 conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             }
             val code = conn.responseCode
+            Log.i(TAG, "-> HTTP " + code + " for " + path)
             val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
                 ?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
             if (code !in 200..299) {
+                Log.w(TAG, "非 2xx：" + code + " body=" + text.take(200))
                 // 401 时给出可执行的提示，而不是把 HTTP 码丢给用户。
                 throw IllegalStateException(
                     if (code == 401) "本地鉴权失败（401）。重启应用后重试。" else "HTTP $code：$text"
