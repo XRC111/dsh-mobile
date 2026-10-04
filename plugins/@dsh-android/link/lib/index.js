@@ -32,6 +32,7 @@ import { connectToHost } from './link-protocol/endpoint.js';
 import { MOBILE_METHODS, DEFAULT_PORT, fileChunks } from './link-protocol/protocol.js';
 import { open } from './link-protocol/secret.js';
 import { registerRoutes } from './link-protocol/routes.js';
+import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_POLICY } from './link-protocol/llmrelay.js';
 
 /**
  * 连接方式。
@@ -213,6 +214,8 @@ function apply(ctx, config = {}) {
         state.conn = conn;
         conn.on('close', () => { if (state.conn === conn) state.conn = null; });
         registerMobileMethods(conn);
+        // 记下对端是否宣告了 llm.relay —— 决定"经另一台设备调用"该不该出现。
+        peerOffersRelay = (conn.peerMethods ?? []).includes(RELAY_METHOD);
         // 桌面对首次配对会发放长期令牌，存下来供重连。mode 也一起存，
         // 这样重连时不必再问用户"上次是怎么连的"。
         await save({ host, port, mode, ...(conn.issuedToken ? { token: conn.issuedToken } : {}) });
@@ -228,16 +231,92 @@ function apply(ctx, config = {}) {
         };
     }
 
+    /**
+     * 把请求转发到对端，并把远端产生的 chunk 逐块交回本地消费方。
+     *
+     * waterfall 的监听器必须返回 AsyncIterable<StreamChunk>，所以这里把
+     * 回调式的事件流包成一个异步生成器。
+     *
+     * ⚠️ 队列不能丢：远端是"边算边发"，本地在 await 生成器时才拉取。若只留
+     *    最后一个值，用户看到的就是"等半天整段蹦出来" —— 那正是我们要避免的。
+     *
+     * @param {object} conn - 已配对的连接。
+     * @param {object} options - 原始 GenerateOptions（原样转发，不裁剪字段）。
+     * @returns {AsyncGenerator<object>} 远端的 chunk。
+     */
+    async function* relayStream(conn, options) {
+        /** @type {object[]} 等待消费的 chunk。 */
+        const queue = [];
+        let done = false;
+        let failure = null;
+        let wake = null;
+        const push = (chunk) => { queue.push(chunk); wake?.(); wake = null; };
+        const finish = (error) => { if (error) failure = error; done = true; wake?.(); wake = null; };
+
+        // 远端结束或失败时，结束整个生成器。
+        const settled = conn.callStream(RELAY_METHOD, options, push).then(
+            () => finish(null),
+            (error) => finish(error),
+        );
+
+        try {
+            for (;;) {
+                while (queue.length > 0) yield queue.shift();
+                if (done) break;
+                await new Promise((resolve) => { wake = resolve; });
+            }
+            while (queue.length > 0) yield queue.shift();
+            if (failure) throw failure;
+        } finally {
+            // 本地消费方提前退出（用户取消 / 会话中断）时结束这次转发。
+            // settled 只是用来兜住"远端还没结束就走了"的 rejection，
+            // 不 await —— await 它会把取消也变成等待。
+            settled.catch(() => {});
+        }
+    }
+
     /** 取当前连接，没有就报清楚。 */
     function requireConn() {
         if (!state.conn || state.conn.closed) throw new Error('还没连接桌面。先跑 link_connect（首次需要配对码）。');
         return state.conn;
     }
 
+    /**
+     * 切换远程凭据转发。
+     *
+     * 工具与 HTTP 路由共用这一份，避免两条路径状态不一致。
+     *
+     * @param {object} args - { enabled?, policy? }。
+     * @returns {object} 切换后的状态。
+     */
+    function toggleRelay(args = {}) {
+        if (typeof args.enabled === 'boolean') remoteEnabled = args.enabled;
+        if (typeof args.policy === 'string' && Object.values(RELAY_POLICY).includes(args.policy)) {
+            remotePolicy = args.policy;
+        }
+        return opStatus().llmRelay;
+    }
+
     /** 状态：工具与 GUI 路由共用同一份。 */
     function opStatus() {
         return {
             connected: Boolean(state.conn && !state.conn.closed),
+            // 远程凭据转发：默认关闭，且必须显式开启（对话内容会离开本机）。
+            llmRelay: {
+                enabled: remoteEnabled,
+                policy: remotePolicy,
+                provider: REMOTE_PROVIDER,
+                providerLabel: REMOTE_PROVIDER_LABEL,
+                connected: Boolean(state.conn && !state.conn.closed),
+                // 对端没有宣告 llm.relay 时，开着也没用 —— 明说，别让人以为配好了。
+                peerOffersRelay,
+                available: Boolean(state.conn && !state.conn.closed && peerOffersRelay),
+                note: !peerOffersRelay
+                    ? '桌面未宣告转发能力（它可能没启用 llm 服务）。'
+                    : remoteEnabled
+                        ? '已开启：本地无法执行的模型调用会转发到桌面执行。'
+                        : '默认关闭。开启后，**对话内容会发到桌面**执行。',
+            },
             desktop: state.conn?.peer ?? null,
             encrypted: Boolean(state.conn?.sessionKey),
             desktopMethods: state.conn?.peerMethods ?? [],
@@ -251,15 +330,71 @@ function apply(ctx, config = {}) {
         };
     }
 
+    // ── 远程凭据转发（默认关闭）─────────────────────────────────────────────
+    //
+    // 机制：拦截 `llm/stream` waterfall（每次模型调用必经，见 dsh-llm 的
+    // streamWithRegistration）。所以**插件注入的 provider 也一并覆盖** —— 它在
+    // adapter 之上，不需要逐个适配。
+    //
+    // ⚠️ 为什么不直接用 ctx.tools.execute 那类入口：那是给模型用的分发工具，
+    //    绕不开它自己的前置检查；waterfall 才是「每次模型调用必经」的正式接缝。
+    //
+    // 策略 B：本地能跑就本地跑（快、少一跳），否则转发。
+    let remoteEnabled = false;
+    let remotePolicy = RELAY_POLICY.localFirst;
+    /** 对端（桌面）是否宣告了 llm.relay。配对时刷新。 */
+    let peerOffersRelay = false;
+    ctx.effect(() => {
+        if (!ctx.get('llm')) return;
+        // 让 "经另一台设备调用" 出现在模型选择器里。
+        ctx.llm.registerConfigurableProviders([{
+            provider: REMOTE_PROVIDER,
+            displayName: REMOTE_PROVIDER_LABEL,
+            settingsNs: ctx.fiber?.entry?.options?.id ?? 'dsh-android-link',
+            settingsPath: [],
+        }]);
+        // 转发器：命中且允许转发时短路，替换默认路由。
+        const forward = (options, next) => {
+            // 没开启转发、或这个 provider 本来就是"经另一台设备调用"，
+            // 都按原样本地走。
+            if (!remoteEnabled || !options || options.provider === REMOTE_PROVIDER) return next();
+            const conn = state.conn;
+            if (!conn || conn.closed) {
+                // 没连上桌面就**明确报错**。这里若回落 next()，用户会看到
+                // "本地没凭据"这类误导性错误，而真正的原因是没配对。
+                const e = new Error('未连接到桌面，无法转发模型调用。请先在「远程联动」里配对，或关闭转发。');
+                e.code = 'NO_REMOTE_LINK';
+                throw e;
+            }
+            return relayStream(conn, options);
+        };
+        ctx.on('llm/stream', forward);
+        return () => ctx.off('llm/stream', forward);
+    }, 'dsh-link: llm relay');
+
     // GUI 用的 HTTP 路由（挂在已鉴权的 Connection 上）。
     // 手机外壳页面通过本机 dsh 的地址调它们 —— 不用让用户在对话里敲 JSON。
     registerRoutes(ctx, {
         status: async () => { await loadSaved(); return opStatus(); },
+        // 开关远程转发。默认 false —— 这是**明确的选择**，不是默认值忘了写。
+        llmRelay: async (body) => toggleRelay(body),
         connect: (body) => connect(body ?? {}),
         stop: async () => { state.conn?.close('user requested'); state.conn = null; return { connected: false }; },
     });
 
     const tools = [
+        {
+            name: 'link_llm_relay',
+            description:
+                '远程凭据转发：本地无法执行的模型调用改由桌面用自己的凭据执行（**对话内容会发到桌面**）。默认关闭，需显式开启。',
+            parameters: {
+                enabled: { type: 'boolean', required: true, description: 'true 开启，false 关闭。' },
+                policy: { type: 'string', description: '策略：local-first（本地优先，默认）或 always-remote（全部转发）。' },
+            },
+            async execute(args) {
+                return toggleRelay(args);
+            },
+        },
         {
             name: 'link_connect',
             description: '连接到桌面并配对。首次需要桌面上的 6 位配对码（link_host_start 会给）；之后只写 host/port 就会用已保存的令牌自动重连。mode=forward 时表示走端口转发（如 EasyTier），host 应填 127.0.0.1。',
@@ -446,6 +581,6 @@ function apply(ctx, config = {}) {
 }
 
 export const name = '@dsh-android/link';
-export const inject = ['tools', 'connection'];
+export const inject = ['tools', 'connection', 'llm'];
 
 export { apply };

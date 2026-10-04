@@ -59,6 +59,10 @@ data class LinkSnapshot(
     val error: String? = null,
     /** 连接方式：direct（直连）或 forward（端口转发）。 */
     val mode: String = "direct",
+    /** 远程凭据转发是否已开启（默认 false）。 */
+    val llmRelayEnabled: Boolean = false,
+    /** 对端（桌面）是否宣告了转发能力。 */
+    val llmRelayAvailable: Boolean = false,
 ) {
     /** 中文名，直接显示在卡片上。 */
     val modeLabel: String get() = if (mode == "forward") "端口转发" else "直连"
@@ -76,6 +80,8 @@ data class ShellActions(
     /** 发起配对（弹出输入 host/port/code 的对话框）。 */
     val onLinkConnect: () -> Unit,
     val onLinkDisconnect: () -> Unit,
+    /** 切换远程凭据转发。 */
+    val onToggleLlmRelay: (Boolean) -> Unit,
 )
 
 /**
@@ -200,6 +206,18 @@ fun ShellScreen(state: ShellState, actions: ShellActions) {
                         },
                         actionLabel = if (state.link.connected) "断开" else "配对",
                         onAction = if (state.link.connected) actions.onLinkDisconnect else actions.onLinkConnect,
+                    )
+                    SettingRow(
+                        label = "远程转发",
+                        value = when {
+                            !state.link.llmRelayAvailable -> "桌面未宣告该能力（不可用）"
+                            state.link.llmRelayEnabled -> "已开启 —— 对话内容会发到桌面执行"
+                            else -> "已关闭 —— 需显式开启"
+                        },
+                        actionLabel = if (state.link.llmRelayEnabled) "关闭" else "开启",
+                        onAction = if (state.link.llmRelayAvailable) {
+                            { actions.onToggleLlmRelay(!state.link.llmRelayEnabled) }
+                        } else null,
                     )
                 }
 

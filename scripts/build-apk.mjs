@@ -96,4 +96,16 @@ if (result.error) {
     console.error('  2. 指定已有安装：set DSH_GRADLE=C:\\path\\to\\gradle\\bin\\gradle.bat');
     console.error('  3. 把 gradle 放进 PATH');
 }
+// ⚠️ 防"绿灯但没产物"：Gradle 的 dexBuilderDebug 可能判定 UP-TO-DATE 而跳过，
+// 但我们刚把旧 APK 删了。若构建成功却没有产物，强制重打包一次再报。
+if ((result.status ?? 1) === 0 && !fs.existsSync(apkOut)) {
+    console.log('[build] 构建成功但没有 APK，重跑一次打包任务（:app:dexBuilderDebug --rerun）');
+    const retry = useCmd
+        ? spawnSync('cmd.exe', ['/c', gradle.cmd, '--no-daemon', ':app:dexBuilderDebug', '--rerun-tasks'], { cwd: ROOT, stdio: 'inherit', env })
+        : spawnSync(gradle.cmd, ['--no-daemon', ':app:dexBuilderDebug', '--rerun-tasks'], { cwd: ROOT, stdio: 'inherit', env });
+    if (!fs.existsSync(apkOut)) {
+        console.error('[build] 仍然没有产物：' + apkOut);
+        process.exit(1);
+    }
+}
 process.exit(result.status ?? 1);

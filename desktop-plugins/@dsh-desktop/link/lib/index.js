@@ -33,6 +33,8 @@ import { startLinkServer } from './link-protocol/endpoint.js';
 import { DESKTOP_METHODS, COMMON_METHODS, DEFAULT_PORT, makePairingCode, makeToken, fileChunks } from './link-protocol/protocol.js';
 import { seal, open } from './link-protocol/secret.js';
 import { registerRoutes } from './link-protocol/routes.js';
+import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_ADVERTISED } from './link-protocol/llmrelay.js';
+import { executeLocally } from './link-protocol/relayexec.js';
 import { describeAddresses } from './link-protocol/netinfo.js';
 
 /** 配对码有效期。短一点更安全，长了用户也记不住。 */
@@ -138,8 +140,23 @@ function apply(ctx, config = {}) {
         return win32.mod;
     }
 
-    /** 注册对端可调用的方法。 */
+    /**
+     * 注册对端可调用的方法。
+     *
+     * `llm.relay` 是「远程凭据转发」的入口：手机把**请求内容**发过来，
+     * 本机用自己的凭据执行。注意它**只在本机 llm 服务可用时**才有意义，
+     * 所以下面用 ctx.get('llm') 判一下，缺了就回一句人话而不是抛栈。
+     */
     function registerHostMethods(conn) {
+        conn.handleStream(RELAY_METHOD, async (args, emit, meta) => {
+            const llm = ctx.get('llm');
+            if (!llm) {
+                const e = new Error('本机没有 llm 服务，无法代为执行。');
+                e.code = 'NO_LOCAL_LLM';
+                throw e;
+            }
+            return executeLocally({ llm }, emit, args, meta);
+        });
         conn.handle('computer.status', async () => {
             const w = await loadWin32();
             if (!w) throw new Error(win32.error);
@@ -310,7 +327,13 @@ function apply(ctx, config = {}) {
             host: config.host,
             authorize,
             device: { name: os.hostname(), platform: process.platform + '-' + process.arch },
-            methods: [...DESKTOP_METHODS, ...COMMON_METHODS],
+            // 宣告 llm.relay：让手机知道这台机器能代为执行模型调用。
+            // 但**只有本机真的挂了 llm 服务**才宣告 —— 手机据此决定要不要开转发。
+            methods: [
+                ...DESKTOP_METHODS,
+                ...COMMON_METHODS,
+                ...(ctx.get('llm') ? [RELAY_ADVERTISED] : []),
+            ],
             log,
             onConnection(conn) {
                 state.conn = conn;
@@ -508,6 +531,6 @@ function apply(ctx, config = {}) {
 }
 
 export const name = '@dsh-desktop/link';
-export const inject = ['tools', 'connection'];
+export const inject = ['tools', 'connection', 'llm'];
 
 export { apply };

@@ -164,6 +164,7 @@ class MainActivity : AppCompatActivity() {
                             onShowLogs = { showLogPaths() },
                             onLinkConnect = { promptLinkConnect() },
                             onLinkDisconnect = { linkDisconnect() },
+                            onToggleLlmRelay = { enable -> toggleLlmRelay(enable) },
                         ),
                     )
                 }
@@ -278,6 +279,8 @@ class MainActivity : AppCompatActivity() {
                     savedPort = v.optInt("savedPort"),
                     hasToken = v.optBoolean("hasToken", false),
                     mode = v.optString("mode", "direct"),
+                    llmRelayEnabled = v.optJSONObject("llmRelay")?.optBoolean("enabled", false) ?: false,
+                    llmRelayAvailable = v.optJSONObject("llmRelay")?.optBoolean("available", false) ?: false,
                 )
             } catch (e: Exception) {
                 LinkSnapshot(error = e.message)
@@ -401,6 +404,26 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 linkSnapshot.value = linkSnapshot.value.copy(connected = false, desktopName = "")
                 pushShellState(NodeState.state.value)
+            }
+        }.start()
+    }
+
+    /** 切换远程凭据转发（模型调用转发到桌面执行）。 */
+    private fun toggleLlmRelay(enable: Boolean) {
+        val url = NodeState.state.value.url
+        Thread {
+            try {
+                val v = LinkClient.call(url, "/llm-relay", JSONObject().put("enabled", enable))
+                runOnUiThread {
+                    linkSnapshot.value = linkSnapshot.value.copy(
+                        llmRelayEnabled = v.optBoolean("enabled", enable),
+                        llmRelayAvailable = v.optBoolean("available", false),
+                    )
+                    pushShellState(NodeState.state.value)
+                    toast(if (enable) "已开启：对话内容会发到桌面执行" else "已关闭远程转发")
+                }
+            } catch (e: Exception) {
+                runOnUiThread { toast("切换失败：" + (e.message ?: "未知错误")) }
             }
         }.start()
     }

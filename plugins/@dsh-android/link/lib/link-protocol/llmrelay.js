@@ -46,6 +46,31 @@ export const RELAY_POLICY = {
 /** 转发方法名（挂在联动通道上）。 */
 export const RELAY_METHOD = 'llm.relay';
 
+/**
+ * 服务方在握手里**宣告**的方法名。
+ *
+ * 为什么单独列：`methods` 列表是给对端做能力发现的（peerMethods）。转发能力
+ * 是**可选**的（桌面得有 llm 服务），所以要能让对端看见"这台机器能代为执行模型
+ * 调用"，而不是让手机盲发过去撞 404。
+ */
+export const RELAY_ADVERTISED = RELAY_METHOD;
+
+/**
+ * 转发请求的载荷。
+ *
+ * 形状是实测出来的（真实 dsh 上跑探针确认），不是猜的：
+ *   { provider: "deepseek-account", model: "deepseek-chat",
+ *     messages: [{ role: "user", content: "…" }] }
+ *
+ * 关键：`options` 只有这三个字段，**纯 JSON**，所以可以原样跨链路转发，
+ * 接收端喂给自己的 `llm.stream()` 即可，无需反序列化任何内部结构。
+ *
+ * 但要注意：真实调用里 options 可能带更多字段（tools、system、信号…）。
+ * 所以这里转发**整个 options**，不做字段裁剪 —— 裁剪会在插件注入自定义字段时
+ * 静默丢东西，而那正是「插件注入的 API 也要走转发」这条要求要覆盖的场景。
+ */
+export const RELAY_REQUEST_KEYS = ['provider', 'model', 'messages'];
+
 /** 转发时用到的虚拟 provider 名。它会出现在模型选择器里。 */
 export const REMOTE_PROVIDER = 'llm-remote';
 

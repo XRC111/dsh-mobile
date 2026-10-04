@@ -15,8 +15,8 @@ android {
         // ⚠️ 每次修完原生/运行时问题就**必须**递增：设备上排查时最先要确认的就是
         // 「装的到底是哪一版」。之前一直停在 1/0.1.0，导致无法区分「修复没生效」
         // 和「装的是旧包」—— 这两件事的排查方向完全相反，浪费了好几轮。
-        versionCode = 9
-        versionName = "0.4.2"
+        versionCode = 10
+        versionName = "0.5.0"
         // 与 libnode.so 构建工具链对齐
         ndkVersion = "28.2.13676358"
         // libnode.so 只提供 arm64-v8a
