@@ -13,7 +13,7 @@
  * scripts/link-protocol-copies.test.mjs 逐字节校验。
  *
  * 跑法：node scripts/sync-desktop-plugin.mjs
- * 环境变量 DSH_DESKTOP_REPO 可覆盖 dsh-desktop 仓库位置（默认 D:\\code\\dsh-desktop）。
+ * 环境变量 DSH_DESKTOP_REPO 可覆盖 dsh-desktop 仓库位置（默认为本仓库的同级目录）。
  */
 
 import fs from 'node:fs';
@@ -22,7 +22,10 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SOURCE = path.join(ROOT, 'desktop-plugins/@dsh-desktop/link');
-const REPO = process.env.DSH_DESKTOP_REPO ?? 'D:\\code\\dsh-desktop';
+// ⚠️ 不要写死作者机器上的路径。默认取「仓库的同级目录」——大多数人是把
+//    dsh-android 和 dsh-desktop clone 在一起。找不到就跳过（脚本本来就会跳过），
+//    所以没配这个仓库的人不会因此构建失败。
+const REPO = process.env.DSH_DESKTOP_REPO ?? path.resolve(ROOT, '..', 'dsh-desktop');
 const HOME = process.env.DSH_HOME ?? path.join(os.homedir(), 'AppData/Roaming/DSH-Desktop/dsh-home');
 
 /** 需要同步的文件（显式列出，避免把临时文件也带过去）。 */
