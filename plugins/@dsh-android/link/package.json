@@ -1,6 +1,6 @@
 {
   "name": "@dsh-android/link",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "description": "DSH 远程联动（手机侧）：连接桌面，双向设备操作、文件互通、会话与模型共用。",
   "type": "module",

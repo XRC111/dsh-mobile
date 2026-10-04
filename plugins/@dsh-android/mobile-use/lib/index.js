@@ -205,17 +205,32 @@ function apply(ctx, config) {
   // ── 只读：服务状态 ────────────────────────────────────────────────────────
   ctx.tools.register(defineTool({
     name: 'mobile_status',
-    description: '查看 mobile_use 的可用状态：屏幕尺寸、Android 版本。无障碍服务未开启时这里会明确报错。',
+    description:
+      '查看 mobile_use 的可用状态：屏幕尺寸、Android 版本，以及**截屏与手势是否可用**。'
+      + '排查"截屏/手势超时"时先看这里：screenOn / secureLocked / mediaProjectionGranted '
+      + + '任一为 false 都会直接导致超时。',
     parameters: {},
     output: textOut({
       width: { type: 'integer' },
       height: { type: 'integer' },
       density: { type: 'number' },
       sdk: { type: 'integer' },
+      screenOn: { type: 'boolean' },
+      secureLocked: { type: 'boolean' },
+      mediaProjectionGranted: { type: 'boolean' },
     }),
     async execute() {
       const s = await call('status', {})
-      return { width: s.width, height: s.height, density: s.density, sdk: s.sdk }
+      // 服务端暂时不返回这几个字段时按"未知即 true"处理，避免旧版本把状态报成不可用。
+      return {
+        width: s.width,
+        height: s.height,
+        density: s.density,
+        sdk: s.sdk,
+        screenOn: s.screenOn !== false,
+        secureLocked: s.secureLocked === true,
+        mediaProjectionGranted: s.mediaProjectionGranted !== false,
+      }
     },
     presentCall: () => ({ card: 'generic', title: '查看 mobile_use 状态', kind: 'read', rawInput: {} }),
   }))
