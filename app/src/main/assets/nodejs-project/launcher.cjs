@@ -20,21 +20,92 @@ const crypto = require('crypto');
 const { Worker } = require('node:worker_threads');
 const { extractTarGz } = require('./extract-tar.cjs');
 
+// 被 scripts/pnpm-shim.test.mjs require 时，只取补丁定义、不启动引擎。
+// 判据是环境变量而不是「有没有 dataDir」—— 验证脚本不一定传 dataDir，
+// 用参数判会导致 main() 真的跑起来、在本机文件系统上乱写。
+const EXPORT_ONLY = process.env.DSH_LAUNCHER_EXPORT_ONLY === '1';
+
 const dataDir = process.argv[2];
-if (!dataDir) {
+if (!dataDir && !EXPORT_ONLY) {
     console.error('launcher: missing dataDir argument');
     process.exit(2);
 }
 
-const bundleDir = path.join(dataDir, 'bundle');
-const runtimeDir = path.join(dataDir, 'dsh-runtime');
-const homeDir = path.join(dataDir, 'dsh-home');
-const stateFile = path.join(dataDir, 'node-state.json');
-const logFile = path.join(dataDir, 'dsh.log');
+// 导出模式下这些路径只用于顶层求值（不会被用到），但 path.join(undefined) 会直接抛，
+// 所以给个占位根目录而不是让整个 require 失败。
+const pathRoot = dataDir || '.';
+
+const bundleDir = path.join(pathRoot, 'bundle');
+const runtimeDir = path.join(pathRoot, 'dsh-runtime');
+const homeDir = path.join(pathRoot, 'dsh-home');
+const stateFile = path.join(pathRoot, 'node-state.json');
+const logFile = path.join(pathRoot, 'dsh.log');
 
 const DSH_PACKAGE = '@deepseek-ai/dsh';
 /** dsh 启动后打印的一行：dsh web: http://127.0.0.1:<port>/?token=<token> */
 const URL_RE = /https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)\/[^\s]*\?token=[A-Za-z0-9._\-]+/;
+
+// ── Android pnpm 替身：dshmarket 的补丁定义 ──────────────────────────────
+//
+// 5 个挂载点，不是 1 个。runDshPlugin 只管「执行安装」，而 probePnpm /
+// provisionPnpm 是安装的**前置门禁**（UI 先探测 pnpm 可用才让装），只改
+// 执行点会卡在门禁上；cancelActive 保证 UI 的取消按钮真的有效。
+//
+// 每一处都带 FAKE !== null 的前置判断：pnpm-lite.mjs 加载失败时 FAKE 为 null，
+// 五处补丁全部退回 dsh-cli.js 原有的 spawn 行为（fail-open 而非 fail-closed）——
+// 市场照常启动，只是安装功能退化成 Android 上必然失败的 EACCES。
+//
+// ⚠️ 这里的 find 字符串必须与 dshmarket 1.66.8 的源码**逐字节**一致：
+//    缩进差一个空格就匹配不上，installPnpmLite 会记一条锚点未命中的警告
+//    并放弃（不硬改第三方代码），表现是安装静默失效。改动前先核对上游。
+
+/** 判断「补丁是否已在」的标记；与 pnpm-lite.mjs 里的 ensureDshmarketPatched 共用。 */
+const SHIM_APPLY_MARKER = '/* dsh-android:pnpm-lite */ if (FAKE !== null) return FAKE.run';
+
+/** 挂在 dsh-cli.js 文件头的动态 import 块（顶层 await 加载替身）。 */
+const SHIM_HEADER = [
+    "import { fetchNpmLatest } from './updates.js';",
+    '/* dsh-android:pnpm-lite — 见 profiles/web/pnpm-lite.mjs',
+    ' * Android 上不存在"可写+可执行"的位置（app 目录 execve 被 SELinux 拒、外置存储 noexec），',
+    ' * 因此任何 spawn(\'pnpm\') 都必然失败。这里改为在进程内执行 pnpm 的语义。',
+    ' * 加载失败时 FAKE 保持 null，退回本文件原有的 spawn 行为。 */',
+    'const FAKE = await (async () => {',
+    '    try {',
+    "        return (await import(new URL('../../../pnpm-lite.mjs', import.meta.url).href)).default;",
+    '    } catch (error) {',
+    "        try { logEvent('warn', 'setup-pnpm', `pnpm-lite unavailable: ${String(error?.message ?? error)}`); } catch { /* 尽力而为 */ }",
+    '        return null;',
+    '    }',
+    '})();',
+].join('\n');
+
+const DSMARKET_PATCHES = [
+    {
+        find: "import { fetchNpmLatest } from './updates.js';",
+        replace: SHIM_HEADER,
+        marker: 'const FAKE = await (async () => {',
+    },
+    {
+        find: 'export function cancelActive() {\n    if (activeDesktopOperation !== null) {',
+        replace: 'export function cancelActive() {\n    /* dsh-android:pnpm-lite */ if (FAKE !== null && FAKE.cancel()) return true;\n    if (activeDesktopOperation !== null) {',
+        marker: 'FAKE.cancel()',
+    },
+    {
+        find: 'export function probePnpm() {\n    if (pnpmReady || hostPnpmReady)',
+        replace: 'export function probePnpm() {\n    /* dsh-android:pnpm-lite */ if (FAKE !== null) return Promise.resolve(true);\n    if (pnpmReady || hostPnpmReady)',
+        marker: 'if (FAKE !== null) return Promise.resolve(true);',
+    },
+    {
+        find: 'export async function provisionPnpm() {\n    // A host that ships a package manager has nothing to provision, and asking',
+        replace: 'export async function provisionPnpm() {\n    /* dsh-android:pnpm-lite */ if (FAKE !== null) return { ok: true };\n    // A host that ships a package manager has nothing to provision, and asking',
+        marker: 'if (FAKE !== null) return { ok: true };',
+    },
+    {
+        find: 'export function runDshPlugin(profile, pluginArgs) {\n    const { file, args, cwd, viaShell } = dshArgv();',
+        replace: 'export function runDshPlugin(profile, pluginArgs) {\n    /* dsh-android:pnpm-lite */ if (FAKE !== null) return FAKE.run(profile, pluginArgs);\n    const { file, args, cwd, viaShell } = dshArgv();',
+        marker: 'if (FAKE !== null) return FAKE.run(profile, pluginArgs);',
+    },
+];
 
 function writeState(patch) {
     try {
@@ -176,6 +247,102 @@ function installShellPlugins(bundleDir, modulesDir) {
     return installed;
 }
 
+/**
+ * Android 上的 pnpm 替身：把 `pnpm-lite.mjs` 落到 profile 根，并给已装的
+ * dshmarket 打上「进程内执行 pnpm」的补丁。
+ *
+ * ── 为什么需要这个 ────────────────────────────────────────────────────────
+ * 这台设备上**不存在「可写 + 可执行」的位置**（实测）：
+ *   · app 私有目录 execve → exit=126，SELinux untrusted_app 拒绝；
+ *   · /sdcard、/storage/emulated 挂载带 noexec → 同样 126；
+ *   · /data/local/tmp 不可写；/system/bin 可执行但只读。
+ * 市场的日志记的是 EACCES 而非 ENOENT —— 缺文件是表象，**execve 被禁才是本质**。
+ * 所以「造一个假的 pnpm 可执行文件」物理上不成立，只能在 dsh 进程内实现 pnpm 语义。
+ *
+ * ── 为什么放在 launcher 而不是 dsh 起来之后 ────────────────────────────────
+ * ① pnpm-lite.mjs 用**自己所在目录**推断 profile 根（PROFILE_DIR = import.meta.url），
+ *    落位必须精确到 $DSH_HOME/profiles/web/，放别处整套路径推导就偏了；
+ * ② 补丁要写进 dshmarket 的 lib/dsh-cli.js，而 dshmarket 可能在启动阶段被加载；
+ * ③ launcher 在 dsh **之前**、同一进程里跑，落位与打补丁的失败不会影响引擎启动。
+ *
+ * 全程 try/catch —— 这层是增强，装不上就退回到「市场不可用」的旧行为，
+ * 绝不能拖垮 dsh 启动。
+ *
+ * @param {string} bundleDir - assets 里 bundle 的落位目录（含 pnpm-lite.mjs）。
+ * @param {string} homeDir - $DSH_HOME。
+ * @returns {{placed: boolean, patched: number, missed: string[]}} 落位与打补丁的结果。
+ */
+function installPnpmLite(bundleDir, homeDir) {
+    const result = { placed: false, patched: 0, missed: [] };
+    try {
+        const source = path.join(bundleDir, 'pnpm-lite.mjs');
+        if (!fs.existsSync(source)) {
+            log('no pnpm-lite.mjs in bundle, skipping Android pnpm shim');
+            return result;
+        }
+        // ⚠️ 目标必须是 profile **根**（profiles/web/），不是 node_modules/。
+        //    pnpm-lite.mjs 里 PROFILE_DIR 取的是自己的目录，而补丁里的
+        //    import(new URL('../../../pnpm-lite.mjs', import.meta.url)) 是从
+        //    node_modules/dshmarket/lib/ 上溯三级 —— 两者指向同一个目录。
+        //    放错层级时 pnpm-lite 找不到 profile、dshmarket 也 import 不到它。
+        const profileDir = path.join(homeDir, 'profiles', 'web');
+        fs.mkdirSync(profileDir, { recursive: true });
+        const target = path.join(profileDir, 'pnpm-lite.mjs');
+
+        // 指纹跳过：内容没变就不重写，省一次 IO 也避免无谓地动用户的 profile。
+        const digest = crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex').slice(0, 16);
+        const marker = path.join(profileDir, '.pnpm-lite.json');
+        let previous = null;
+        try { previous = JSON.parse(fs.readFileSync(marker, 'utf8')); } catch { /* ignore */ }
+        const upToDate = previous && previous.digest === digest && fs.existsSync(target);
+        if (upToDate) {
+            log('pnpm-lite up to date (' + digest + ')');
+        } else {
+            fs.copyFileSync(source, target);
+            fs.writeFileSync(marker, JSON.stringify({ digest, managedBy: 'dsh-android' }));
+            log('placed pnpm-lite.mjs at ' + target + ' (' + digest + ')');
+        }
+        result.placed = true;
+
+        // 打 / 重打 dshmarket 补丁。市场的「更新自己」会覆盖 dsh-cli.js，
+        // 每次启动都检查一次标记，缺了就补 —— 不然用户更新一次市场功能就静默失效。
+        const cli = path.join(profileDir, 'node_modules', 'dshmarket', 'lib', 'dsh-cli.js');
+        if (!fs.existsSync(cli)) {
+            log('dshmarket not installed yet, shim patch deferred to its first install');
+            return result;
+        }
+        let text = fs.readFileSync(cli, 'utf8');
+        if (text.includes(SHIM_APPLY_MARKER)) {
+            log('dshmarket pnpm shim already applied');
+            result.patched = 1;
+            return result;
+        }
+        for (const p of DSMARKET_PATCHES) {
+            if (text.includes(p.marker)) { result.patched += 1; continue; }
+            if (!text.includes(p.find)) {
+                result.missed.push(p.find.split('\n')[0]);
+                continue;
+            }
+            text = text.replace(p.find, p.replace);
+            result.patched += 1;
+        }
+        if (result.patched === DSMARKET_PATCHES.length) {
+            fs.writeFileSync(cli, text);
+            log('applied Android pnpm shim to dshmarket (' + result.patched + ' hooks)');
+        } else {
+            // 锚点对不上说明上游改了函数签名。如实记警告，不硬改第三方代码 ——
+            // 硬改出来的补丁可能语法错误，把整个市场带崩。
+            log('WARNING: dshmarket updated and ' + result.missed.length +
+                ' shim anchor(s) no longer match (' + result.missed.join(' | ') +
+                '); installs will fall back to spawning pnpm and fail on Android');
+        }
+        return result;
+    } catch (error) {
+        log('pnpm-lite install failed: ' + (error && error.message));
+        return result;
+    }
+}
+
 /** 递归复制目录（目标已由调用方清空）。 */
 function copyDir(from, to) {
     fs.mkdirSync(to, { recursive: true });
@@ -303,6 +470,17 @@ async function main() {
     //    装到 profile 下才挂得上（未激活条目 10 → 3）。
     installShellPlugins(bundleDir, path.join(homeDir, 'profiles', 'web', 'node_modules'));
 
+    // 2b-2) Android pnpm 替身：把 pnpm-lite.mjs 落到 profile 根，并给已装的
+    //       dshmarket 打上进程内执行 pnpm 的补丁。
+    //       必须在 dsh 启动**之前** —— dshmarket 的 lib/dsh-cli.js 带顶层 await，
+    //       加载后若没有 FAKE 就会一直走 spawn 那条必然失败的路。
+    //       失败只记日志：这层是增强，装不上退回旧行为即可，不能拖垮启动。
+    try {
+        installPnpmLite(bundleDir, homeDir);
+    } catch (error) {
+        log('pnpm-lite install threw (ignored): ' + (error && error.message));
+    }
+
     // 2c) 原生插件加载自检。
     //     会话持久化要 flock → flock 要加载 system.node → 加载失败则会话起不来 →
     //     工具调不到。也就是说「能跑诊断工具」和「需要诊断」互斥。所以把自检放在
@@ -379,6 +557,17 @@ async function main() {
         if (!readyAnnounced) writeState({ phase: 'failed', error: String((e && e.message) || e) });
     });
 }
+
+// 供 scripts/verify-shim-apply.mjs 复用补丁定义。
+//
+// ⚠️ 这个导出**不能省**：验证脚本若自己抄一份 PATCHES，就会出现「脚本里是一份、
+//    launcher 里是另一份」的漂移 —— 验证永远通过，而设备上实际打不上补丁。
+//    验证必须针对**真正生效的那份常量**。
+module.exports = { DSMARKET_PATCHES, SHIM_APPLY_MARKER, SHIM_HEADER, installPnpmLite };
+
+// 被验证脚本 require 时到此为止，绝不能往下走 main() —— 它会真的去解压运行时、
+// 起 worker、在文件系统上写一堆东西。
+if (EXPORT_ONLY) return;
 
 main().catch((e) => {
     log('FATAL ' + (e && e.stack ? e.stack : e));

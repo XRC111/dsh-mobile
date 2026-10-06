@@ -22,6 +22,7 @@
     "test:link-relay": "node scripts/link-relay.test.mjs",
     "test:link-contract": "node scripts/link-contract.test.mjs",
     "audit:native": "node scripts/audit-native.mjs",
+    "test:pnpm-shim": "node scripts/pnpm-shim.test.mjs",
     "sync:link": "node scripts/sync-link-protocol.mjs",
     "sync:desktop-plugin": "node scripts/sync-desktop-plugin.mjs",
     "install:desktop-link": "node scripts/install-desktop-link.mjs",
