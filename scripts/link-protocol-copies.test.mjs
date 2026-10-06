@@ -34,6 +34,18 @@ const TARGETS = [
     path.join(ROOT, 'plugins/@dsh-android/link/lib/link-protocol'),
 ];
 
+/** 比较两个 x.y.z 版本号：a>b → 1，a<b → -1，相等 0。无法解析按 0。 */
+function cmpVer(a, b) {
+    const pa = String(a).match(/^(\d+)\.(\d+)\.(\d+)/);
+    const pb = String(b).match(/^(\d+)\.(\d+)\.(\d+)/);
+    if (!pa || !pb) return 0;
+    for (let i = 1; i <= 3; i++) {
+        const d = Number(pa[i]) - Number(pb[i]);
+        if (d !== 0) return d > 0 ? 1 : -1;
+    }
+    return 0;
+}
+
 for (const target of TARGETS) {
     test('协议副本与源一致：' + path.relative(ROOT, target), () => {
         for (const file of FILES) {
@@ -73,10 +85,29 @@ test('dsh-desktop 仓库里的分发副本与规范源一致', () => {
     const files = walk(src);
     assert.ok(files.length >= 6, '规范源文件数异常');
     for (const rel of files) {
-        const a = fs.readFileSync(path.join(src, rel), 'utf8');
         const bPath = path.join(copy, rel);
         assert.ok(fs.existsSync(bPath), '分发副本缺 ' + rel + '（跑 node scripts/sync-desktop-plugin.mjs）');
-        assert.equal(fs.readFileSync(bPath, 'utf8'), a, rel + ' 分发副本与规范源不一致（跑 node scripts/sync-desktop-plugin.mjs）');
+        const a = fs.readFileSync(path.join(src, rel), 'utf8');
+        const b = fs.readFileSync(bPath, 'utf8');
+        if (rel === 'package.json') {
+            // package.json 是**唯一一个两边本来就不该相同**的文件：副本会被
+            // dsh-desktop/scripts/pack-all-plugins.mjs 注入 dshDesktopBuild 内容戳
+            // 并按内容自动升 patch 版本（那是「这份内容重新打过包」的判据）。
+            // 逐字节比它必然报错，而报错的修复方式不是改代码，是把它排除掉 ——
+            // 早先没排除，于是每次跑 pack-all 之后这个测试就红一次，
+            // 很容易被误当成「副本没同步成功」。
+            //
+            // 这里改验真正该保证的东西：name 一致、版本**不倒退**。
+            const pa = JSON.parse(a);
+            const pb = JSON.parse(b);
+            assert.equal(pb.name, pa.name, '分发副本的 name 与规范源不一致');
+            assert.ok(
+                cmpVer(pb.version, pa.version) >= 0,
+                `分发副本版本 ${pb.version} 低于规范源 ${pa.version}（版本倒退）`,
+            );
+            continue;
+        }
+        assert.equal(b, a, rel + ' 分发副本与规范源不一致（跑 node scripts/sync-desktop-plugin.mjs）');
     }
 });
 
