@@ -1,7 +1,6 @@
 package com.dshdesktop.android
 
 import android.annotation.SuppressLint
-import android.app.AlertDialog
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
@@ -28,7 +27,6 @@ import org.json.JSONObject
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
@@ -67,6 +65,22 @@ class MainActivity : AppCompatActivity() {
      * 那会卡住界面。所以由 refreshLink() 在后台线程刷新后写进来。
      */
     private val linkSnapshot = mutableStateOf(LinkSnapshot())
+
+    /**
+     * 当前该显示的对话框（null = 没有）。
+     *
+     * 原先每个确认框都是当场 `AlertDialog.Builder(this).show()` —— 命令式、原生观感，
+     * 与 MiuiX 写的外壳页格格不入。现在统一成状态：这里只写「该显示哪个」，
+     * 由 ShellDialogHost 用 MiuiX 渲染。好处是不会有「弹了两个框」「框关了状态没清」
+     * 这类不一致，观感也跟页面一致。
+     */
+    private val activeDialog = mutableStateOf<ShellDialog?>(null)
+
+    /** 底部轻提示文字（替代 Toast）。 */
+    private val banner = mutableStateOf<String?>(null)
+
+    /** mesh 快照（本机身份 + 设备清单）。 */
+    private val meshSnapshot = mutableStateOf(MeshSnapshot())
 
     /** 外壳页的 View 容器（ComposeView）。 */
     private lateinit var shellCompose: androidx.compose.ui.platform.ComposeView
@@ -138,6 +152,9 @@ class MainActivity : AppCompatActivity() {
      * 用户先看到外壳页（状态、工作区、mobile_use 都在这里管），要用了再进去。
      */
     private fun buildViews() {
+        // setContent {} 里的 `this` 是 ComposeView，不是 Activity —— 回调里需要
+        // Activity 时统一用这个引用。
+        val activity = this
         root = FrameLayout(this).apply { fitsSystemWindows = false }
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -154,17 +171,44 @@ class MainActivity : AppCompatActivity() {
                 if (state != null) {
                     ShellScreen(
                         state = state,
+                        // ⚠️ dialog / banner 必须在这里**实时读取**，不能只靠 state 里的快照。
+                        //
+                        // ShellState 是 pushShellState() 时抓的一份快照，而对话框状态
+                        // 随时会被调用方改（点「取消」就是 activeDialog.value = null）。
+                        // 只读快照的话，那个改动没有触发 pushShellState，
+                        // state.dialog 就一直停在旧值 —— 表现是**对话框关不掉**。
+                        // 传 MutableState 进来让 Compose 直接订阅它，改了就重组。
+                        dialog = activeDialog.value,
+                        banner = banner.value,
                         actions = ShellActions(
                             onEnter = { openWebUi() },
                             onPickWorkspace = { chooseWorkspace() },
                             onToggleMobileUse = { toggleMobileUse() },
-                            onPickPermissionMode = { pickPermissionMode() },
+                            onPickPermissionMode = { pickPermissionMode(it) },
                             onToggleMobileUseInput = { toggleMobileUseInput() },
                             onRestart = { restartApp() },
-                            onShowLogs = { showLogPaths() },
-                            onLinkConnect = { promptLinkConnect() },
+                            onShowLogs = { activeDialog.value = ShellDialog.LogPaths },
+                            onPickLinkConnect = { promptLinkConnect() },
+                            onLinkConnect = { host, port, code, mode -> linkConnect(host, port, code, mode) },
                             onLinkDisconnect = { linkDisconnect() },
                             onToggleLlmRelay = { enable -> toggleLlmRelay(enable) },
+                            // ⚠️ 这些 lambda 里不能直接写 `this`：它们位于
+                            //    ComposeView.setContent {} 内部，`this` 是 ComposeView
+                            //    而不是 Activity。用 activity 显式引用（编译器会拦，
+                            //    但写清楚省得下次又踩）。
+                            currentPermissionMode = { DshSettings.load(activity).permissionMode },
+                            onOpenMobileUseSettings = {
+                                MobileUse.openAccessibilitySettings(activity)
+                                pendingMobileUseRefresh = true
+                            },
+                            onRequestAllFilesAccess = {
+                                Workspace.openAllFilesAccessSettings(activity)
+                                pendingWorkspacePick = true
+                            },
+                            onStayPrivateWorkspace = { pickFolder(Workspace.suggestedStart()) },
+                            onDismissDialog = { activeDialog.value = null },
+                            onDismissBanner = { banner.value = null },
+                            onSetTopology = { topology -> setTopology(topology) },
                         ),
                     )
                 }
@@ -272,6 +316,9 @@ class MainActivity : AppCompatActivity() {
         Thread {
             val snap = try {
                 val v = LinkClient.call(url, "/status", null)
+                // mesh 段可能没有（插件版本较旧或身份初始化失败）—— 那时保持空快照，
+                // 界面上「多设备」这一节会整体不显示，而不是显示一排空值。
+                val m = v.optJSONObject("mesh")
                 LinkSnapshot(
                     connected = v.optBoolean("connected", false),
                     desktopName = v.optJSONObject("desktop")?.optString("name").orEmpty(),
@@ -281,6 +328,29 @@ class MainActivity : AppCompatActivity() {
                     mode = v.optString("mode", "direct"),
                     llmRelayEnabled = v.optJSONObject("llmRelay")?.optBoolean("enabled", false) ?: false,
                     llmRelayAvailable = v.optJSONObject("llmRelay")?.optBoolean("available", false) ?: false,
+                    mesh = if (m == null) {
+                        MeshSnapshot()
+                    } else {
+                        val onlineArr = m.optJSONArray("online")
+                        val online = buildList {
+                            if (onlineArr != null) {
+                                for (i in 0 until onlineArr.length()) {
+                                    val o = onlineArr.optJSONObject(i) ?: continue
+                                    add(
+                                        (o.optString("name").ifEmpty { "未命名" }) to
+                                            o.optString("deviceId"),
+                                    )
+                                }
+                            }
+                        }
+                        MeshSnapshot(
+                            selfId = m.optString("deviceId"),
+                            selfName = m.optString("name"),
+                            topology = m.optString("topology", "star"),
+                            paired = m.optInt("paired", 0),
+                            online = online,
+                        )
+                    },
                 )
             } catch (e: Exception) {
                 LinkSnapshot(error = e.message)
@@ -293,70 +363,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 弹一个输入 host / 端口 / 配对码的对话框，然后连桌面。
+     * 切换 mesh 拓扑（star ↔ mesh）。
      *
-     * 用 AlertDialog + 三个 EditText 而不是跳到另一个页面：这个表单只有三项，
-     * 用户填完就走 —— 多一个页面反而多一次返回。
+     * 失败要明确说出来：拓扑决定「谁拨谁」，切错了表现是「设备明明在线却连不上」，
+     * 不给反馈的话用户完全无从判断。
+     *
+     * @param topology 'star' 或 'mesh'。
+     */
+    private fun setTopology(topology: String) {
+        val url = NodeState.state.value.url
+        Thread {
+            try {
+                LinkClient.call(url, "/topology", JSONObject().put("topology", topology))
+                runOnUiThread { refreshLink() }
+            } catch (e: Exception) {
+                runOnUiThread { toast("切换拓扑失败：" + (e.message ?: "未知错误")) }
+            }
+        }.start()
+    }
+
+    /**
+     * 打开配对对话框（地址 / 端口 / 配对码 + 连接方式）。
+     *
+     * 这里只把「该显示哪个框」写进状态，表单本身由 ShellDialogHost 用 MiuiX 渲染 ——
+     * 原先是一大段 AlertDialog + EditText + RadioGroup 的命令式拼装，观感是系统默认的，
+     * 与页面其它部分完全不是一套。
      */
     private fun promptLinkConnect() {
         val saved = linkSnapshot.value
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val host = android.widget.EditText(this).apply {
-            hint = "桌面地址，如 192.168.1.10"
-            setText(saved.savedHost)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT
-        }
-        val port = android.widget.EditText(this).apply {
-            hint = "端口（默认 45731）"
-            setText(if (saved.savedPort > 0) saved.savedPort.toString() else "45731")
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-        }
-        val code = android.widget.EditText(this).apply {
-            hint = "6 位配对码（已在桌面配过就留空）"
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-        }
-        // 连接方式：两种方式填错时的报错都是"连不上"，原因却完全相反，
-        // 所以让用户显式选，并在填错时由插件端给出明确说明。
-        val modeDirect = android.widget.RadioButton(this).apply {
-            text = "直连（填桌面真实地址）"
-            isChecked = saved.mode != "forward"
-        }
-        val modeForward = android.widget.RadioButton(this).apply {
-            text = "端口转发（EasyTier 等映射到本机，地址填 127.0.0.1）"
-            isChecked = saved.mode == "forward"
-        }
-        val group = android.widget.RadioGroup(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            addView(modeDirect)
-            addView(modeForward)
-        }
-        val box = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(pad, pad / 2, pad, 0)
-            addView(group)
-            addView(host)
-            addView(port)
-            addView(code)
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("连接桌面")
-            .setMessage(
-                "直连：在桌面上跑 link_host_start，把地址、端口和 6 位配对码填到这里。\n\n"
-                    + "端口转发：先用 EasyTier 的 --port-forward 把桌面端口映射到本机，这里填 127.0.0.1。"
-            )
-            .setView(box)
-            .setPositiveButton("连接") { _, _ ->
-                val h = host.text.toString().trim()
-                val p = port.text.toString().trim().toIntOrNull() ?: 45731
-                val c = code.text.toString().trim()
-                if (h.isEmpty()) {
-                    toast("请填桌面地址")
-                    return@setPositiveButton
-                }
-                linkConnect(h, p, c, if (modeForward.isChecked) "forward" else "direct")
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        activeDialog.value = ShellDialog.LinkConnect(
+            host = saved.savedHost,
+            port = if (saved.savedPort > 0) saved.savedPort else 45731,
+            mode = saved.mode,
+        )
+        pushShellState(NodeState.state.value)
     }
 
     /** 真正发起配对（后台线程）。 */
@@ -428,25 +468,21 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    /** 一句短提示。 */
+    /**
+     * 一句短提示。
+     *
+     * 走外壳自己的底部浮层（ShellBanner），不用 Toast —— 后者由系统绘制，圆角、
+     * 配色、字体都不受应用主题控制，在一个 MiuiX 界面里是唯一一处系统默认观感。
+     */
     private fun toast(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        banner.value = message
+        pushShellState(NodeState.state.value)
     }
 
 
     private fun showLogPaths() {
-        AlertDialog.Builder(this)
-            .setTitle("日志")
-            .setMessage(
-                "引擎日志：files/dsh.log\n" +
-                    "Node stderr：files/node-stderr.log\n" +
-                    "mobile_use 操作：files/mobile-use.log\n" +
-                    "崩溃：files/crash.log\n\n" +
-                    "用 adb 取：\n" +
-                    "adb shell run-as $packageName cat files/dsh.log",
-            )
-            .setPositiveButton("知道了", null)
-            .show()
+        activeDialog.value = ShellDialog.LogPaths
+        pushShellState(NodeState.state.value)
     }
 
     /** 版本号（外壳 + 运行环境，排障时第一个要问的东西）。 */
@@ -460,48 +496,42 @@ class MainActivity : AppCompatActivity() {
      * bwrap 或 landlock 做内核级限制，而 Android 上两者都不存在，选了它们
      * 命令会以「沙箱不可用」失败。这不是 bug，是平台事实，所以放在选项说明里，
      * 而不是等用户踩坑。
+     *
+     * 打开选择框（真正选哪个由对话框回调 [pickPermissionMode] 带回来）。
      */
     private fun pickPermissionMode() {
-        val modes = DshSettings.PermissionMode.entries
-        val labels = modes.map { it.label + "（" + it.id + "）" }.toTypedArray()
-        val current = DshSettings.load(this).permissionMode
-        AlertDialog.Builder(this)
-            .setTitle("dsh 权限模式")
-            .setSingleChoiceItems(labels, modes.indexOf(current)) { dialog, which ->
-                val picked = modes[which]
-                val snapshot = DshSettings.load(this).copy(permissionMode = picked)
-                DshSettings.save(this, snapshot)
-                pushShellState(NodeState.state.value)
-                dialog.dismiss()
-                if (picked != DshSettings.PermissionMode.DANGER) {
-                    AlertDialog.Builder(this)
-                        .setTitle("需要重启应用")
-                        .setMessage(
-                            picked.description + "\n\n" +
-                                "Android 上没有可用的内核沙箱后端（无 bwrap / landlock），" +
-                                "这个模式下的命令会以「沙箱不可用」失败。\n\n" +
-                                "设置已保存，重启应用后生效。",
-                        )
-                        .setPositiveButton("立即重启") { _, _ -> restartApp() }
-                        .setNegativeButton("稍后", null)
-                        .show()
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        activeDialog.value = ShellDialog.PermissionMode
+        pushShellState(NodeState.state.value)
+    }
+
+    /**
+     * 用户在对话框里选定了一个模式：保存，必要时提示重启。
+     *
+     * @param picked 选中的模式。
+     */
+    private fun pickPermissionMode(picked: DshSettings.PermissionMode) {
+        val snapshot = DshSettings.load(this).copy(permissionMode = picked)
+        DshSettings.save(this, snapshot)
+        pushShellState(NodeState.state.value)
+        // danger 模式是 Android 上唯一能真正跑命令的（没有内核沙箱可用），
+        // 所以只有切到别的模式才提示「会失败 + 需重启」。
+        if (picked != DshSettings.PermissionMode.DANGER) {
+            activeDialog.value = ShellDialog.ConfirmRestart(
+                picked.description + "\n\n" +
+                    "Android 上没有可用的内核沙箱后端（无 bwrap / landlock），" +
+                    "这个模式下的命令会以「沙箱不可用」失败。\n\n" +
+                    "设置已保存，重启应用后生效。",
+            )
+            pushShellState(NodeState.state.value)
+        }
     }
 
     /** 切换 mobile_use 是否允许模型输入（点击/滑动/输入文本）。 */
     private fun toggleMobileUseInput() {
         val snapshot = DshSettings.load(this)
         DshSettings.save(this, snapshot.copy(mobileUseInput = !snapshot.mobileUseInput))
+        activeDialog.value = ShellDialog.ConfirmRestart("设置已保存，重启应用后生效。")
         pushShellState(NodeState.state.value)
-        AlertDialog.Builder(this)
-            .setTitle("需要重启应用")
-            .setMessage("设置已保存，重启应用后生效。")
-            .setPositiveButton("立即重启") { _, _ -> restartApp() }
-            .setNegativeButton("稍后", null)
-            .show()
     }
 
     /**
@@ -512,25 +542,8 @@ class MainActivity : AppCompatActivity() {
      * 回来后 onResume 再刷新那一行。
      */
     private fun toggleMobileUse() {
-        val enabled = MobileUse.isEnabled(this)
-        AlertDialog.Builder(this)
-            .setTitle(if (enabled) "关闭 mobile_use" else "开启 mobile_use")
-            .setMessage(
-                if (enabled) {
-                    "请在系统设置里关闭「DSH」的无障碍开关。\n\n关闭后 mobile_use 的全部工具立即失效。"
-                } else {
-                    "mobile_use 需要无障碍权限，系统不允许应用自行开启。\n\n" +
-                        "接下来的设置页里找到「DSH」并打开开关。开启后模型就能：\n" +
-                        "· 截屏看画面\n· 读取界面元素（精确坐标）\n· 模拟点击 / 滑动 / 输入\n\n" +
-                        "也就是说它可以代替你操作这台手机。不需要时请关掉。"
-                },
-            )
-            .setPositiveButton("去设置") { _, _ ->
-                MobileUse.openAccessibilitySettings(this)
-                pendingMobileUseRefresh = true
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        activeDialog.value = ShellDialog.MobileUse(MobileUse.isEnabled(this))
+        pushShellState(NodeState.state.value)
     }
 
     /**
@@ -542,19 +555,8 @@ class MainActivity : AppCompatActivity() {
      */
     private fun chooseWorkspace() {
         if (!Workspace.hasAllFilesAccess()) {
-            AlertDialog.Builder(this)
-                .setTitle("需要「所有文件访问权」")
-                .setMessage(
-                    "要把工作区放在共享存储（如 /sdcard/Documents）必须先授予该权限。\n\n" +
-                        "这是特殊权限，系统不允许弹窗授予，需要你在接下来的设置页里手动打开开关。\n\n" +
-                        "不授予也可以继续：工作区会留在应用私有目录内，仅本应用可见。",
-                )
-                .setPositiveButton("去设置") { _, _ ->
-                    Workspace.openAllFilesAccessSettings(this)
-                    pendingWorkspacePick = true
-                }
-                .setNegativeButton("留在私有目录") { _, _ -> pickFolder(Workspace.suggestedStart()) }
-                .show()
+            activeDialog.value = ShellDialog.AllFilesAccess
+            pushShellState(NodeState.state.value)
             return
         }
         pickFolder(Workspace.suggestedStart())
@@ -564,13 +566,8 @@ class MainActivity : AppCompatActivity() {
     private fun pickFolder(start: java.io.File) {
         FolderPicker.show(this, start) { picked ->
             Workspace.writeMarker(this, picked)
+            activeDialog.value = ShellDialog.WorkspaceSet(picked)
             pushShellState(NodeState.state.value)
-            AlertDialog.Builder(this)
-                .setTitle("工作区已设为")
-                .setMessage("$picked\n\n重启应用后生效（当前引擎的 cwd 已经固定）。")
-                .setPositiveButton("立即重启") { _, _ -> restartApp() }
-                .setNegativeButton("稍后", null)
-                .show()
         }
     }
 
