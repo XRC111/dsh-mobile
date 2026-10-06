@@ -139,6 +139,8 @@ data class ShellActions(
     val onDismissBanner: () -> Unit,
     /** 切换 mesh 拓扑（star / mesh）。 */
     val onSetTopology: (String) -> Unit,
+    /** 打开开源许可页（LGPL 合规要求：声明与替换机制必须对用户可达）。 */
+    val onShowLicenses: () -> Unit,
 )
 
 /**
@@ -329,6 +331,12 @@ fun ShellScreen(
                         ShellInfoRow(
                             label = "版本",
                             value = state.version,
+                        )
+                        ShellInfoRow(
+                            label = "开源许可",
+                            value = "本应用含 EasyTier（LGPL-3.0）等第三方组件",
+                            actionLabel = "查看",
+                            onAction = actions.onShowLicenses,
                         )
                     }
 

@@ -85,6 +85,9 @@ sealed interface ShellDialog {
         val port: Int,
         val mode: String,
     ) : ShellDialog
+
+    /** 开源许可与第三方组件说明（LGPL 合规要求，必须可达）。 */
+    data object Licenses : ShellDialog
 }
 
 /**
@@ -261,6 +264,8 @@ fun ShellDialogHost(
         )
 
         is ShellDialog.LinkConnect -> LinkConnectDialog(dialog, show, close, actions)
+
+        ShellDialog.Licenses -> LicensesDialog(show, close)
     }
 }
 
@@ -314,6 +319,85 @@ private fun PermissionModeDialog(
  *
  * 连接方式用 SuperSpinner 而不是两个单选按钮：两种方式填错时的报错都是「连不上」、
  * 原因却完全相反，所以这里把说明直接写进每个选项的 summary 里，用户选的时候就看得到。
+ */
+/**
+ * 第三方组件与开源许可。
+ *
+ * ── 为什么这个页面必须存在 ───────────────────────────────────────────────────
+ * 内嵌 EasyTier 后，APK 里带着 LGPL-3.0 的动态库。LGPL-3.0 第 4/6 条要求：
+ *   · 显著声明「本产品包含第三方开源组件」及其许可；
+ *   · 允许用户**替换**该动态库（这是 LGPL 与 GPL 的关键区别，也是我们能
+ *     合法动态链接的前提）；
+ *   · 提供 LGPL 全文与该库的**源码获取方式**（不是只有下载地址）。
+ *
+ * 所以这不是「锦上添花的关于页」，是硬性合规项 —— 缺了就等于没满足 LGPL 条件。
+ */
+@Composable
+private fun LicensesDialog(
+    show: MutableState<Boolean>,
+    onClose: () -> Unit,
+) {
+    SuperDialog(
+        show = show,
+        title = "开源许可",
+        summary = "DSH 是 DeepSeek 开源项目；本应用另含下列第三方组件。",
+        onDismissRequest = onClose,
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 360.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Text(
+                text = "EasyTier",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "许可：GNU Lesser General Public License v3.0（LGPL-3.0）\n" +
+                    "用途：内嵌组网引擎，用于跨网络连接手机与桌面。\n" +
+                    "项目主页：https://easytier.cn\n" +
+                    "源码仓库：https://github.com/EasyTier/EasyTier\n" +
+                    "组件源码获取：上述仓库中 easytier/、easytier-core/、easytier-proto/、\n" +
+                    "easytier-contrib/easytier-ffi/、easytier-contrib/easytier-android-jni/\n" +
+                    "目录，随本应用一同编译的版本号记录于「诊断 → 版本」。\n\n" +
+                    "LGPL-3.0 第 4 条赋予你替换该动态库的权利：\n" +
+                    "libeasytier_android_jni.so 与 libeasytier_ffi.so 以独立文件形式打包在\n" +
+                    "jniLibs/arm64-v8a/ 下，你可以用自己编译的版本替换它们后重新安装本应用。\n" +
+                    "替换后的库由你自行提供，本应用不限制其来源。\n\n" +
+                    "完整的 LGPL-3.0 许可全文随本应用打包（见 APK 内 assets/licenses/），\n" +
+                    "也可在 https://www.gnu.org/licenses/lgpl-3.0.html 在线查阅。",
+                fontSize = 13.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "DSH",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "本应用内置的 DSH 引擎与插件版权归 DeepSeek 所有，\n" +
+                    "以仓库内的 LICENSE 为准。",
+                fontSize = 13.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+        ) {
+            Button(onClick = onClose, colors = primaryButtonColors()) { Text("知道了") }
+        }
+    }
+}
+
+/**
+ * 连接对话框：桌面地址 / 端口 / 配对码 + 连接方式。
  */
 @Composable
 private fun LinkConnectDialog(

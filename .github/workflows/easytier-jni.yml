@@ -1,0 +1,191 @@
+# 编译内嵌 EasyTier 的 Android JNI 动态库。
+#
+# ── 这条流水线为什么存在 ───────────────────────────────────────────────────
+# 手机与桌面异地时需要 overlay 组网。内嵌 EasyTier 后手机不用再装第二个 App，
+# 但 EasyTier 是 Rust 写的，官方**没有**提供预编译的 JNI 库 ——
+# v2.6.4 到 v2.6.0 五个 release 的 30 个 asset 全是各平台 GUI/CLI 包和官方 APK，
+# 没有 libeasytier_android_jni.so。所以只能自己交叉编译。
+#
+# 本仓库原先没有任何 CI（APK 都是本机构建后本地分发的），这条是第一条。
+# 注意 dsh-desktop 里那两条 windows-latest 流水线编不出 Android 的 .so ——
+# 交叉编译要 Linux + NDK，与桌面仓库无关。
+#
+# ── 为什么不用本机编 ───────────────────────────────────────────────────────
+# Rust 依赖树很大，全量编一次要十几分钟；而且本机 Rust 工具链与 EasyTier
+# 仓库的 rust-toolchain.toml（channel = "1.95"）不一定一致，每次都要先装工具链。
+# 放 CI 上有缓存，第二次以后快得多。
+#
+# ── 产物 ───────────────────────────────────────────────────────────────────
+# libeasytier_android_jni.so 与 libeasytier_ffi.so（两个都要：JNI 链 ffi，ffi 链 core）
+# → 上传为 Actions artifact，供手工下载填进 app/src/main/jniLibs/arm64-v8a/。
+# **刻意不自动提交 .so**：二进制入库会让仓库迅速膨胀，且每个 PR 都存一份。
+# 人工确认后放进去，APK 构建才有它。
+#
+# ── 触发 ────────────────────────────────────────────────────────────────────
+#   1) 手动：Actions → easytier-jni → Run workflow
+#   2) 改 easytier 版本 / 改本文件时手动跑
+# 刻意**不设定时**：EasyTier 上游发布不频繁，定时编只是白烧 Actions 配额。
+name: easytier-jni
+
+on:
+  workflow_dispatch:
+    inputs:
+      easytier_ref:
+        description: 'EasyTier 版本或提交（留空 = 用下方 defaults 里的 pin）'
+        required: false
+        default: ''
+      cargo_ndk_version:
+        description: 'cargo-ndk 版本（留空 = 用下方 defaults 里的 pin）'
+        required: false
+        default: ''
+
+concurrency:
+  group: easytier-jni
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # EasyTier 官方 build.sh 只编 arm64-v8a，本项目也是 arm64-only。
+  ANDROID_TARGET: arm64-v8a
+  RUST_TARGET: aarch64-linux-android
+
+jobs:
+  build-jni:
+    # ubuntu 而不是 windows-latest：cargo-ndk 依赖 Linux 的 NDK 工具链与 linker 配置。
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: 拉本仓库
+        uses: actions/checkout@v4
+
+      - name: 装 Android NDK
+        run: |
+          set -euo pipefail
+          # ubuntu-24.04 镜像自带 NDK（27.3/28.2/29.0 三个版本），
+          # ANDROID_NDK_LATEST_HOME 指向最新的那个。不用装完整 SDK。
+          ndk_dir="${ANDROID_NDK_LATEST_HOME}"
+          echo "ANDROID_NDK_HOME=${ndk_dir}" >> "${GITHUB_ENV}"
+          echo "NDK_HOME=${ndk_dir}" >> "${GITHUB_ENV}"
+          test -d "${ndk_dir}" || {
+            echo "runner 上没有 NDK: ${ndk_dir}"; exit 1; }
+          echo "NDK: ${ndk_dir}"
+          cat "${ndk_dir}/source.properties" | grep Pkg.Revision || true
+
+      - name: 拉 EasyTier 源码
+        run: |
+          set -euo pipefail
+          ref="${{ inputs.easytier_ref || 'v2.6.4' }}"
+
+          # ⚠️ 必须**先**读 EasyTier 的 rust-toolchain.toml，再装工具链。
+          #    它的 channel 是 1.95，而 runner 自带的是 1.98.1。
+          #    一旦 cd 进 EasyTier 目录，cargo/rustup 就会自动切到 1.95 那个工具链；
+          #    如果 aarch64-linux-android target 没给它装上，编译会在链接阶段才炸，
+          #    而且报错信息很难指向真正原因。顺序错了很难查。
+          git clone --depth 1 --filter=blob:none --sparse \
+            --branch "${ref}" \
+            https://github.com/EasyTier/EasyTier.git easytier-src
+
+          toolchain="$(grep -oP 'channel\s*=\s*"\K[^"]+' easytier-src/rust-toolchain.toml)"
+          echo "EasyTier 要求的 Rust: ${toolchain}"
+          rustup toolchain install "${toolchain}" --profile minimal --component rustfmt,clippy || \
+            rustup toolchain install "${toolchain}" --profile minimal
+          rustup run "${toolchain}" rustup target add "${RUST_TARGET}"
+
+          cd easytier-src
+          git sparse-checkout set \
+            easytier-contrib/easytier-android-jni \
+            easytier-contrib/easytier-ffi \
+            easytier easytier-core easytier-proto
+          # 记录真实 commit：产物要能溯源到具体代码，
+          # 否则「这个 .so 是哪版编的」以后就没人说得清了。
+          git rev-parse HEAD | tee easytier-commit.txt
+          echo "RUST_TOOLCHAIN_NAME=${toolchain}" >> "${GITHUB_ENV}"
+
+      - name: 装 cargo-ndk
+        run: |
+          set -euo pipefail
+          version="${{ inputs.cargo_ndk_version || '4.1.2' }}"
+          # --locked：CI 编译要可复现，不让 cargo 解析到更新版本。
+          # 用 +${toolchain} 显式指定工具链，避免装到 runner 默认的 1.98 上。
+          cargo +"${RUST_TOOLCHAIN_NAME}" install cargo-ndk --locked --version "${version}"
+
+      # ⚠️ 缓存放在装完 cargo-ndk 之后：actions/cache 不会自动处理
+      #    cargo install 产生的 ~/.cargo/bin，只缓存 target/ 的话，
+      #    cargo-ndk 每次都得重编 23s（实测本机就这么久）。
+      - name: 缓存 Rust 构建产物
+        uses: actions/cache@v4
+        with:
+          path: easytier-src/target
+          key: easytier-ndk-${{ inputs.easytier_ref || 'v2.6.4' }}-${{ runner.os }}-${{ hashFiles('easytier-src/easytier-contrib/**/Cargo.lock', 'easytier-src/Cargo.lock') }}
+          restore-keys: |
+            easytier-ndk-${{ inputs.easytier_ref || 'v2.6.4' }}-${{ runner.os }}-
+
+      - name: 缓存 cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: easytier-cargo-registry-${{ runner.os }}-${{ hashFiles('easytier-src/Cargo.lock') }}
+          restore-keys: |
+            easytier-cargo-registry-${{ runner.os }}-
+
+      - name: 编译 easytier-ffi
+        working-directory: easytier-src/easytier-contrib/easytier-ffi
+        run: |
+          set -euo pipefail
+          cargo +"${RUST_TOOLCHAIN_NAME}" ndk -t "${ANDROID_TARGET}" build --release
+
+      - name: 编译 easytier-android-jni
+        working-directory: easytier-src/easytier-contrib/easytier-android-jni
+        run: |
+          set -euo pipefail
+          cargo +"${RUST_TOOLCHAIN_NAME}" ndk -t "${ANDROID_TARGET}" build --release
+
+      - name: 收集产物
+        run: |
+          set -euo pipefail
+          # cargo-ndk 用 Rust target 名做目录名，不是 Android 架构名 —— 官方 build.sh
+          # 靠 TARGET_MAP 转换，这里同理。写错会「文件不存在」而不是别的错。
+          out="out/${ANDROID_TARGET}"
+          mkdir -p "${out}"
+          for so in libeasytier_android_jni.so libeasytier_ffi.so; do
+            src="easytier-src/target/${RUST_TARGET}/release/${so}"
+            test -f "${src}" || { echo "缺少产物: ${src}"; exit 1; }
+            cp "${src}" "${out}/"
+          done
+          cp easytier-src/easytier-commit.txt "${out}/"
+          # 把版本信息一起带上：APK 的「开源许可」页要显示实际用的 EasyTier 版本。
+          {
+            echo "easytier_ref=${{ inputs.easytier_ref || 'v2.6.4' }}"
+            echo "rust_target=${RUST_TARGET}"
+            echo "cargo_ndk=${{ inputs.cargo_ndk_version || '4.1.2' }}"
+            echo "ndk=${ANDROID_NDK_LATEST_HOME}"
+          } > "${out}/BUILD-INFO.txt"
+          ls -la "${out}"
+
+      - name: 校验产物能加载
+        run: |
+          set -euo pipefail
+          # 检查 JNI 的导出符号在不在。缺符号的话 APK 一加载就 UnsatisfiedLinkError，
+          # 而那时已经在用户手机上了 —— 在 CI 里拦住比发出去强。
+          so="out/${ANDROID_TARGET}/libeasytier_android_jni.so"
+          echo "--- JNI 导出符号 ---"
+          nm -D --defined-only "${so}" | grep -E 'Java_com_easytier' || {
+            echo "❌ 找不到 Java_com_easytier* 导出符号"; exit 1; }
+          echo "--- 依赖的动态库（应能看到 libeasytier_ffi） ---"
+          readelf -d "${so}" | grep NEEDED || true
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: easytier-jni-${{ inputs.easytier_ref || 'v2.6.4' }}-arm64-v8a
+          path: out/
+          retention-days: 90

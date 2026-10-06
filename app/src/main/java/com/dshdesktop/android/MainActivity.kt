@@ -209,6 +209,7 @@ class MainActivity : AppCompatActivity() {
                             onDismissDialog = { activeDialog.value = null },
                             onDismissBanner = { banner.value = null },
                             onSetTopology = { topology -> setTopology(topology) },
+                            onShowLicenses = { activeDialog.value = ShellDialog.Licenses },
                         ),
                     )
                 }
