@@ -78,6 +78,17 @@ jobs:
           echo "NDK: ${ndk_dir}"
           cat "${ndk_dir}/source.properties" | grep Pkg.Revision || true
 
+      # ⚠️ protoc 必须装 —— EasyTier 的依赖 prost-wkt-types 在 build.rs 里
+      #    调 protoc 生成代码，缺了会 panic：
+      #      Could not find `protoc` ... try setting the `PROTOC` environment variable
+      #    ubuntu runner **不自带** protoc（windows runner 也没有，两条流水线都要装）。
+      - name: 装 protoc
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq protobuf-compiler
+          protoc --version
+
       - name: 拉 EasyTier 源码
         run: |
           set -euo pipefail
