@@ -99,10 +99,16 @@ jobs:
           rustup run "${toolchain}" rustup target add "${RUST_TARGET}"
 
           cd easytier-src
-          git sparse-checkout set \
-            easytier-contrib/easytier-android-jni \
-            easytier-contrib/easytier-ffi \
-            easytier easytier-core easytier-proto
+          # ⚠️ 刻意**不做** sparse 检出。cargo 解析 workspace 时会顺着
+          #   members 与 path 依赖去找一串目录：easytier-rpc-build（不在
+          #   members 里，是 easytier 的 path 依赖）、easytier-gui/src-tauri、
+          #   easytier-contrib/easytier-mini / easytier-uptime / easytier-ios ……
+          #   每漏一个就是一条
+          #   「failed to read <path>/Cargo.toml: No such file」，
+          #   而且这错误与代码无关、极易误判成环境问题。
+          #   两次都踩到了：先漏 rpc-build，再漏 gui/src-tauri。
+          # 猜依赖闭包的代价远高于多拉几百 MB —— 直接全量检出。
+          git sparse-checkout disable
           # 记录真实 commit：产物要能溯源到具体代码，
           # 否则「这个 .so 是哪版编的」以后就没人说得清了。
           git rev-parse HEAD | tee easytier-commit.txt
@@ -136,6 +142,17 @@ jobs:
           key: easytier-cargo-registry-${{ runner.os }}-${{ hashFiles('easytier-src/Cargo.lock') }}
           restore-keys: |
             easytier-cargo-registry-${{ runner.os }}-
+
+      - name: 预检 workspace 能解析
+        working-directory: easytier-src
+        run: |
+          set -euo pipefail
+          # 单独一步，好让「缺文件」这类问题在这一步就报清楚，
+          # 而不是混在真正的编译错误里（首次跑就踩过：
+          # sparse 漏了 easytier-rpc-build，cargo 在加载 manifest 阶段就报
+          # No such file，与代码本身无关）。
+          cargo +"${RUST_TOOLCHAIN_NAME}" metadata --format-version 1 --no-deps > /dev/null
+          echo "✓ workspace manifest 可解析"
 
       - name: 编译 easytier-ffi
         working-directory: easytier-src/easytier-contrib/easytier-ffi
