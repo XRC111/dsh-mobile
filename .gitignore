@@ -35,6 +35,18 @@ app/src/main/assets/bundle/dsh-runtime.tar
 app/src/main/jniLibs/**/libnode.so
 .vendor/
 
+# EasyTier 的 JNI 动态库（内嵌组网用，合计 23MB）。
+# 跟 libnode.so 同理：它们是**构建输入**，由 .github/workflows/easytier-jni.yml
+# 交叉编译产出，作为 Actions artifact 归档（保留 90 天），不进仓库。
+# 理由：二进制永久增加 23MB 仓库体积，且每次升 EasyTier 版本都是一次
+# 无法 review 的大 diff。代价是 clone 后要自己跑一次流水线，
+# 脚本见 docs/EASYTIER-INTEGRATION.md。
+app/src/main/jniLibs/**/libeasytier_android_jni.so
+app/src/main/jniLibs/**/libeasytier_ffi.so
+# 该流水线产出的版本记录（随 .so 一起下载，仅供溯源）
+app/src/main/jniLibs/**/easytier-commit.txt
+app/src/main/jniLibs/**/BUILD-INFO.txt
+
 # 外壳插件在打包时的落位副本（源在 plugins/，这里是 pack-runtime 复制出来的）
 app/src/main/assets/bundle/plugins/
 
