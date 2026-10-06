@@ -112,14 +112,16 @@ jobs:
         run: |
           set -euo pipefail
           toolchain="${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64"
+          test -d "${toolchain}" || { echo "工具链目录不存在: ${toolchain}"; exit 1; }
           clang_ver="$(ls "${toolchain}/lib/clang" | sort -V | tail -1)"
+          test -n "${clang_ver}" || { echo "探测不到 clang 版本"; exit 1; }
+          # 只写 GITHUB_ENV，**不要**在同一步里回读它们 ——
+          # 写进去的值要到下一个 step 才对当前 shell 可见，这里回读会
+          # 触发 `set -u` 下的 `unbound variable` 而整步失败（踩过一次）。
           echo "LIBCLANG_PATH=${toolchain}/lib" >> "${GITHUB_ENV}"
           echo "BINDGEN_EXTRA_CLANG_ARGS=--sysroot=${toolchain}/sysroot" >> "${GITHUB_ENV}"
           echo "KCP_SYS_EXTRA_HEADER_PATH=${toolchain}/lib/clang/${clang_ver}/include" >> "${GITHUB_ENV}"
           echo "detected clang: ${clang_ver}"
-          echo "LIBCLANG_PATH=${LIBCLANG_PATH}"
-          echo "BINDGEN_EXTRA_CLANG_ARGS=${BINDGEN_EXTRA_CLANG_ARGS}"
-          echo "KCP_SYS_EXTRA_HEADER_PATH=${KCP_SYS_EXTRA_HEADER_PATH}"
 
       # ⚠️ protoc 必须装 —— EasyTier 的依赖 prost-wkt-types 在 build.rs 里
       #    调 protoc 生成代码，缺了会 panic：
