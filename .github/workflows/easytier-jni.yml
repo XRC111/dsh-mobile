@@ -65,29 +65,39 @@ jobs:
       - name: 拉本仓库
         uses: actions/checkout@v4
 
-      - name: 装 Android NDK
-        run: |
-          set -euo pipefail
-          # ⚠️ 刻意用 NDK **26.1.10909125**，不是 runner 镜像自带的最新版本。
+      - name: 装 Android SDK 与 NDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '11076708'
+          # ⚠️ 刻意钉 NDK **26.1.10909125**，不是 runner 镜像自带的最新版本。
           #
-          #    直接用 ANDROID_NDK_LATEST_HOME（当时是 30.x）会挂在 kcp-sys 的
-          #    bindgen 上：
+          #    用镜像自带的 ANDROID_NDK_LATEST_HOME（当时 29/30）会挂在 kcp-sys
+          #    的 bindgen 上：
           #      sysroot/usr/include/sys/cdefs.h:365:2: error:
           #        Unversioned target triples are not supported!
           #    NDK 30 的 clang 不再接受不带 API 版本的 triple，而 Rust 的
           #    `aarch64-linux-android` 正是无版本的。
           #
           #    这个版本不是随便挑的，是 EasyTier 官方自己钉的：
-          #      · .github/workflows/mobile.yml → packages: 'ndk;26.0.10792818'
-          #      · android.nix → ndkVersion = "26.1.10909125"
+          #      · .github/workflows/mobile.yml → ndk;26.0.10792818
+          #      · android.nix               → ndkVersion = "26.1.10909125"
           #    跟着官方走，能省掉一类「新版 NDK 更严」导致的交叉编译问题。
+          #
+          # 用这个 action 而不是直接调 sdkmanager：runner 镜像里 cmdline-tools
+          # 的 bin 不在 PATH 上，直接调会 `sdkmanager: command not found`（踩过）。
+          # setup-android 会补上 cmdline-tools 并把 sdkmanager 放进 PATH。
+          # EasyTier 官方 mobile.yml 用的也是这个 action。
+          packages: 'ndk;26.1.10909125 platform-tools'
+
+      - name: 设 NDK 环境变量
+        run: |
+          set -euo pipefail
           ndk_version="26.1.10909125"
-          ndk_dir="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}/ndk/${ndk_version}"
-          if [ ! -d "${ndk_dir}" ]; then
-            sdkmanager --install "ndk;${ndk_version}" || {
-              echo "SDK 里没有 ndk;${ndk_version}，改用 setup-android"; exit 1; }
-          fi
-          test -d "${ndk_dir}" || { echo "NDK 未就位: ${ndk_dir}"; exit 1; }
+          ndk_dir="${ANDROID_SDK_ROOT}/ndk/${ndk_version}"
+          test -d "${ndk_dir}" || {
+            echo "NDK 未就位: ${ndk_dir}"
+            echo "SDK 里实际有的 ndk："; ls "${ANDROID_SDK_ROOT}/ndk" 2>/dev/null || echo "  (没有 ndk 目录)"
+            exit 1; }
           echo "ANDROID_NDK_HOME=${ndk_dir}" >> "${GITHUB_ENV}"
           echo "NDK_HOME=${ndk_dir}" >> "${GITHUB_ENV}"
           echo "NDK: ${ndk_dir}"
