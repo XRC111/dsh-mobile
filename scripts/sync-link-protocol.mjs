@@ -18,7 +18,22 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SOURCE = path.join(ROOT, 'packages/dsh-link-protocol/lib');
-const FILES = ['protocol.js', 'connection.js', 'endpoint.js', 'secret.js', 'routes.js', 'netinfo.js', 'llmrelay.js', 'relayexec.js'];
+const FILES = [
+    'protocol.js',
+    'connection.js',
+    'endpoint.js',
+    'secret.js',
+    'routes.js',
+    'netinfo.js',
+    'llmrelay.js',
+    'relayexec.js',
+    // mesh 三件套：两端都要用它做「我是谁 / 我认识谁 / 现在连上了谁」，
+    // 和协议层一样必须逐字节一致（deviceId 算法、拨号仲裁一旦两边不同，
+    // 表现是「有时能连有时连出两条」，比直接报错难查得多）。
+    'mesh-identity.js',
+    'mesh-registry.js',
+    'mesh-manager.js',
+];
 const TARGETS = [
     path.join(ROOT, 'desktop-plugins/@dsh-desktop/link/lib/link-protocol'),
     path.join(ROOT, 'plugins/@dsh-android/link/lib/link-protocol'),

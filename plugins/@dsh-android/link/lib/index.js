@@ -29,10 +29,14 @@ import path from 'node:path';
 import os from 'node:os';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { connectToHost } from './link-protocol/endpoint.js';
+import { TRANSIT_METHOD } from './link-protocol/protocol.js';
 import { MOBILE_METHODS, DEFAULT_PORT, fileChunks } from './link-protocol/protocol.js';
 import { open } from './link-protocol/secret.js';
 import { registerRoutes } from './link-protocol/routes.js';
 import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_POLICY } from './link-protocol/llmrelay.js';
+import { loadOrCreateIdentity, TOPOLOGY } from './link-protocol/mesh-identity.js';
+import { Registry } from './link-protocol/mesh-registry.js';
+import { LinkManager, shouldDial } from './link-protocol/mesh-manager.js';
 
 /**
  * 连接方式。
@@ -111,6 +115,79 @@ function apply(ctx, config = {}) {
     /** @type {{conn: any, saved: object, mobile: any, mobileError: string|null}} */
     const state = { conn: null, saved: {}, mobile: null, mobileError: null };
 
+    /**
+     * 本端对外宣告的能力。
+     *
+     * ⚠️ 两处必须一致（LinkManager 的 capabilities 与 connectToHost 的 methods）：
+     *    前者决定「别人连进来时看到我能做什么」，后者决定「我拨出去时告诉对方我能做什么」。
+     *    分两份写迟早走样 —— 一边加了 file.push 另一边没加，表现就是同一个功能
+     *    「别人连我时可用、我连别人时不可用」，而两边代码看着都对。
+     *
+     * 含 TRANSIT_METHOD：谁同时连着两台设备，谁就能当中转。手机在 star 里不是
+     * 中转方，但 mesh 下可能成为，所以能力一并宣告 —— 用不用由调用方按当前
+     * 连接情况决定。
+     */
+    const MOBILE_CAPS = [...MOBILE_METHODS, 'file.push', TRANSIT_METHOD];
+
+    // ── mesh 核心：我是谁 / 我认识谁 / 现在连上了谁 ──────────────────────────
+    //
+    // 这一层把原先「固定一对一」升级成「一台设备面对 N 台」：
+    //   identity —— 稳定 deviceId（公钥指纹）+ 密钥对，落 $DSH_HOME/link/identity.json
+    //   registry —— 已配对设备清单，落 $DSH_HOME/link/registry.json
+    //   manager  —— 运行期连接集合 + 拨号仲裁
+    //
+    // ⚠️ 身份载入失败**不能**让插件加载失败：手机可能在只读目录下跑。
+    //    loadOrCreateIdentity 自己吞掉写盘错误，这里再兜一层。
+    let identity = null;
+    let registry = null;
+    let mesh = null;
+    try {
+        identity = loadOrCreateIdentity(home, os.hostname(), 'mobile');
+        registry = new Registry(home, identity.deviceId);
+        mesh = new LinkManager({
+            deviceId: identity.deviceId,
+            identity,
+            registry,
+            name: os.hostname(),
+            kind: 'mobile',
+            capabilities: MOBILE_CAPS,
+            // homeDir 让管理器把「本端签发过的令牌」落盘 —— 不落盘的话进程一重启
+            // 对方拿着有效令牌也连不进来，只能重新配对，而配对码是一次性的。
+            homeDir: home,
+            log,
+        });
+    } catch (error) {
+        log('mesh 身份初始化失败（联动退化为单连接模式）：' + (error?.message ?? error));
+    }
+
+    /**
+     * 切换拓扑并**让驱动跟着变**。
+     *
+     * 只调 mesh.setTopology() 是不够的：那只是记下模式，真正让它生效的是
+     * 自动连接驱动（监听 + 周期性拨号）。切到 mesh 时要把它起起来，
+     * 切回 star 时要停掉监听 —— 否则手机在 star 下也开着入站端口，
+     * 平白放大攻击面，而 star 的设计前提正是「手机不做入站」。
+     *
+     * @param {string} topology - 'star' | 'mesh'。
+     * @returns {Promise<object>} 切换后的状态。
+     */
+    async function applyTopology(topology) {
+        if (!mesh) throw new Error('mesh 未启用（身份初始化失败）');
+        const next = mesh.setTopology(topology);
+        if (next === 'mesh') {
+            await mesh.startAutoConnect({
+                intervalMs: 5000,
+                onConnection: (c) => registerMobileMethods(c),
+            });
+        } else {
+            await mesh.stopAutoConnect();
+        }
+        return {
+            topology: mesh.topology,
+            dialTargets: mesh.dialTargets().map((r) => r.deviceId),
+        };
+    }
+
     /** 载入已保存的配对信息。 */
     async function loadSaved() {
         try {
@@ -169,9 +246,17 @@ function apply(ctx, config = {}) {
         });
         conn.handle('mobile.screen_elements', ({ filter, max } = {}) => mobileCall('nodes', { filter, max }, { timeoutMs: 15_000 }));
         conn.handle('mobile.click', ({ x, y, double } = {}) => mobileCall('tap', { x, y, double }, { timeoutMs: 12_000 }));
-        conn.handle('mobile.scroll', ({ delta } = {}) => mobileCall('swipe', { delta }, { timeoutMs: 12_000 }));
+        // ⚠️ 这里必须是四个坐标。Kotlin 侧的 swipe() 读的是 x1/y1/x2/y2，
+        // 传 delta 会得到 "swipe 需要 x1 / y1 / x2 / y2"。
+        // delta → 坐标的换算放在**桌面侧**（那里拿得到屏幕尺寸）。
+        conn.handle('mobile.scroll', ({ x1, y1, x2, y2 } = {}) => mobileCall('swipe', { x1, y1, x2, y2 }, { timeoutMs: 12_000 }));
         conn.handle('mobile.type', ({ text } = {}) => mobileCall('text', { text }, { timeoutMs: 12_000 }));
-        conn.handle('mobile.key', ({ keys } = {}) => mobileCall('key', { keys }, { timeoutMs: 12_000 }));
+        // ⚠️ 必须是 { name }（单数字符串）。Kotlin 的 globalKey() 读 args.name，
+        // 传 keys 会得到 "未知按键：（空）"。
+        conn.handle('mobile.key', ({ name } = {}) => mobileCall('key', { name }, { timeoutMs: 12_000 }));
+        // 中转：本机同时连着两台设备时，代其中一台把调用转到另一台。
+        // 手机在 mesh 里也可能扮演这个角色（比如两台手机都连着本机）。
+        conn.handle(TRANSIT_METHOD, (a) => mesh.relayCall(a));
         // 桌面往手机推文件：落到手机工作区（DSH 的默认 workspace）。
         conn.handle('file.push', async ({ name, chunks, to } = {}) => {
             const base = to
@@ -207,13 +292,30 @@ function apply(ctx, config = {}) {
         if (state.conn && !state.conn.closed) state.conn.close('reconnect');
         const conn = await connectToHost({
             host, port, code, token,
-            device: { name: os.hostname(), platform: 'android-' + process.arch },
-            methods: [...MOBILE_METHODS, 'file.push'],
+            device: { name: os.hostname(), platform: 'android-' + process.arch, deviceId: identity?.deviceId, kind: 'mobile' },
+            methods: MOBILE_CAPS,
             log,
         });
         state.conn = conn;
         conn.on('close', () => { if (state.conn === conn) state.conn = null; });
         registerMobileMethods(conn);
+        // 记进 mesh：这样 link_devices 能看到它、拨号仲裁也知道这台已经连上了。
+        // 对端 deviceId 来自握手时的 device 描述；老版本对端不带它时跳过 ——
+        // 连接仍然可用，只是无法参与 mesh 的去重与寻址。
+        if (mesh && conn.peer?.deviceId) {
+            mesh.track('out', conn.peer.deviceId, conn);
+            mesh.notePeer({
+                deviceId: conn.peer.deviceId,
+                name: conn.peer.name,
+                kind: conn.peer.kind,
+                endpoint: host + ':' + port,
+                capabilities: conn.peerMethods,
+                // ⚠️ 令牌必须一并写进注册表：mesh.dial() 是从注册表读 rec.token 去重连的，
+                //    只存进 client.json 的话，自动重拨会以「没有令牌」失败 ——
+                //    而配对码是一次性的，等于每次都要人跑去桌面点「换一个配对码」。
+                ...(conn.issuedToken ? { token: conn.issuedToken } : {}),
+            });
+        }
         // 记下对端是否宣告了 llm.relay —— 决定"经另一台设备调用"该不该出现。
         peerOffersRelay = (conn.peerMethods ?? []).includes(RELAY_METHOD);
         // 桌面对首次配对会发放长期令牌，存下来供重连。mode 也一起存，
@@ -282,6 +384,104 @@ function apply(ctx, config = {}) {
     }
 
     /**
+     * 按 deviceId（或设备名）找一条可用连接。
+     *
+     * 支持按名字匹配是为了好用：deviceId 是 16 位十六进制，没人愿意手抄。
+     * 名字歧义时**明确报错**而不是随便挑一台 —— 操作错设备（点错鼠标）比报错严重。
+     *
+     * @param {string} key - deviceId 或设备名。
+     * @returns {object} 连接。
+     */
+    function resolveDevice(key) {
+        if (!mesh) throw new Error('mesh 未启用（身份初始化失败）');
+        const wanted = String(key ?? '').trim();
+        if (!wanted) throw new Error('需要 device（link_devices 里能看到 deviceId）');
+        // 1) 精确 deviceId
+        const direct = mesh.connectionTo(wanted);
+        if (direct && !direct.closed) return direct;
+        // 2) 按名字匹配（已配对的清单里找）
+        const byName = (registry?.list() ?? []).filter((r) => r.name === wanted);
+        if (byName.length === 1) {
+            const conn = mesh.connectionTo(byName[0].deviceId);
+            if (conn && !conn.closed) return conn;
+            throw new Error('设备「' + wanted + '」当前不在线。用 link_connect_device 主动连它。');
+        }
+        if (byName.length > 1) {
+            throw new Error('有 ' + byName.length + ' 台设备都叫「' + wanted + '」，请用 deviceId 指定：'
+                + byName.map((r) => r.deviceId).join('、'));
+        }
+        throw new Error('没有已连接的设备「' + wanted + '」。先跑 link_devices 看有哪些。');
+    }
+
+    /**
+     * 在指定设备上调用一个方法，**连不上就自动走中转**。
+     *
+     * ── 为什么需要中转 ──────────────────────────────────────────────────────
+     * star 拓扑里两台设备（如两台手机）都只连着 hub，彼此没有任何直连路径 ——
+     * 它们之间要互通，只能请 hub 代转。这是文档里承诺过、但一直没实现的能力。
+     *
+     * 顺序：先试直连（快、少一跳），直连不可用再找一台**同时连着目标**的设备当中转。
+     * 中转只做一跳（见 mesh-manager 的 relayCall），不会形成链条。
+     *
+     * @param {string} deviceKey - 目标 deviceId 或设备名。
+     * @param {string} method - 要调用的方法。
+     * @param {object} args - 方法参数。
+     * @returns {Promise<any>} 目标方法的返回值。
+     */
+    async function invokeWithRelay(deviceKey, method, args) {
+        if (!mesh) throw new Error('mesh 未启用（身份初始化失败）');
+        // 1) 直连优先
+        try {
+            return await resolveDevice(deviceKey).call(method, args, { timeoutMs: 60_000 });
+        } catch (directError) {
+            // 只有「找不到在线连接」才值得试中转；方法本身报错（比如目标拒绝）
+            // 要原样抛出去 —— 否则用户看到的是「中转也没成功」，真正的原因被盖掉。
+            const msg = String(directError?.message ?? directError);
+            const offline = /不在线|没有已连接的设备|unknown device|not connected/.test(msg);
+            if (!offline) throw directError;
+        }
+
+        // 2) 找一个能当中转的设备：它得连着目标，且宣告了 relay.call。
+        //
+        // 判据只有「它宣告了中转能力」——不知道它是否真的连着目标（那要问它，
+        // 多一次往返不值得）。relayCall 内部会在目标不可达时明确报错，
+        // 那时错误里会带上是哪台中转失败的，比事前猜准。
+        const targetId = resolveDeviceId(deviceKey);
+        const via = mesh.onlinePeers().find((p) => p.deviceId !== targetId
+            && (p.capabilities ?? []).includes(TRANSIT_METHOD));
+        if (!via) {
+            throw new Error('目标设备不在线，且没有可用的中转设备。'
+                + '（中转需要一台同时连着你和目标的设备，通常是桌面 hub）');
+        }
+        return mesh.connectionTo(via.deviceId).call(
+            TRANSIT_METHOD,
+            { to: targetId, method, args },
+            { timeoutMs: 90_000 },
+        );
+    }
+
+    /**
+     * 把 deviceId 或设备名解析成 deviceId（不要求在线）。
+     *
+     * 与 resolveDevice 的区别：那个要求「现在有活连接」，这个只要求「我认识它」——
+     * 中转场景下目标通常**不在线**（这才是要中转的原因）。
+     *
+     * @param {string} key - deviceId 或设备名。
+     * @returns {string} deviceId。
+     */
+    function resolveDeviceId(key) {
+        const wanted = String(key ?? '').trim();
+        if (!wanted) throw new Error('需要 device（link_devices 里能看到 deviceId）');
+        if (registry?.get(wanted)) return wanted;
+        const byName = (registry?.list() ?? []).filter((r) => r.name === wanted);
+        if (byName.length === 1) return byName[0].deviceId;
+        if (byName.length > 1) {
+            throw new Error('有 ' + byName.length + ' 台设备都叫「' + wanted + '」，请用 deviceId 指定。');
+        }
+        throw new Error('不认识设备「' + wanted + '」。先跑 link_devices 看已配对的有哪些。');
+    }
+
+    /**
      * 切换远程凭据转发。
      *
      * 工具与 HTTP 路由共用这一份，避免两条路径状态不一致。
@@ -326,6 +526,16 @@ function apply(ctx, config = {}) {
             modeLabel: MODES[state.saved.mode ?? 'direct'].label,
             modeHint: MODES[state.saved.mode ?? 'direct'].hint,
             hasToken: Boolean(state.saved.token),
+            // mesh：本机身份 + 已配对设备 + 当前在线。界面据此显示「N 台已配对 / M 台在线」。
+            mesh: mesh
+                ? {
+                    deviceId: identity.deviceId,
+                    name: mesh.name,
+                    topology: mesh.topology,
+                    paired: registry.size,
+                    online: mesh.onlinePeers(),
+                }
+                : null,
             note: state.conn ? null : '未连接。先填桌面地址与配对码。',
         };
     }
@@ -380,6 +590,22 @@ function apply(ctx, config = {}) {
         llmRelay: async (body) => toggleRelay(body),
         connect: (body) => connect(body ?? {}),
         stop: async () => { state.conn?.close('user requested'); state.conn = null; return { connected: false }; },
+        // mesh：设备清单与拓扑。外壳页用它们显示「已配对 / 在线」与切换拓扑。
+        devices: async () => {
+            if (!mesh) return { self: null, peers: [], online: [] };
+            const online = mesh.onlinePeers();
+            const onlineIds = new Set(online.map((p) => p.deviceId));
+            return {
+                self: { deviceId: identity.deviceId, name: mesh.name, topology: mesh.topology },
+                peers: (registry?.list() ?? []).map((r) => ({ ...r.toPublic(), online: onlineIds.has(r.deviceId) })),
+                online,
+            };
+        },
+        topology: async (body) => {
+            if (!mesh) throw new Error('mesh 未启用（身份初始化失败）');
+            if (body?.topology) return applyTopology(body.topology);
+            return { topology: mesh.topology, dialTargets: mesh.dialTargets().map((r) => r.deviceId) };
+        },
     });
 
     const tools = [
@@ -515,6 +741,76 @@ function apply(ctx, config = {}) {
                 return { files: written, credentials: Boolean(res.credentials), note: res.note ?? null };
             },
         },
+        // ── mesh：多设备寻址 ────────────────────────────────────────────────
+        {
+            name: 'link_devices',
+            description: '列出所有已配对设备，以及哪些当前在线。每台设备有稳定的 deviceId（公钥指纹），用它配合 link_invoke 指定要操作哪一台。',
+            parameters: {},
+            async execute() {
+                if (!mesh) return { self: null, peers: [], online: [], note: 'mesh 未启用（身份初始化失败）' };
+                const online = mesh.onlinePeers();
+                const onlineIds = new Set(online.map((p) => p.deviceId));
+                return {
+                    self: { deviceId: identity.deviceId, name: mesh.name, kind: 'mobile', topology: mesh.topology },
+                    // 已配对但离线的也要列 —— 用户需要知道「这台我配过，只是现在不在」。
+                    peers: (registry?.list() ?? []).map((r) => ({ ...r.toPublic(), online: onlineIds.has(r.deviceId) })),
+                    online,
+                };
+            },
+        },
+        {
+            name: 'link_invoke',
+            description: '在**指定设备**上调用一个方法。device 传 deviceId（link_devices 能看到），或用 "self" 之外的名字匹配。用于 mesh 里同时连着多台时指定目标。',
+            parameters: {
+                device: { type: 'string', required: true, description: '目标 deviceId（或设备名）。' },
+                method: { type: 'string', required: true, description: '要调用的方法，如 mobile.status / computer.status。' },
+                args: { type: 'object', additionalProperties: true, properties: {}, description: '方法参数。' },
+            },
+            required: ['device', 'method'],
+            async execute(args) {
+                if (!mesh) throw new Error('mesh 未启用（身份初始化失败）');
+                const method = String(args.method);
+                // 先试直连；连不上再走中转（见 invokeWithRelay）。
+                return invokeWithRelay(args.device, method, args.args ?? {});
+            },
+        },
+        {
+            name: 'link_topology',
+            description: '查看或切换连接拓扑。star（默认）= 一台 hub 收多个 client，client 之间不直连；mesh = 每台都有可达地址时任意两台互连（需要 overlay 虚拟网卡）。',
+            parameters: { topology: { type: 'string', description: '要切到的拓扑：star 或 mesh。省略则只查询。' } },
+            async execute(args) {
+                if (!mesh) throw new Error('mesh 未启用（身份初始化失败）');
+                // 切换走 applyTopology：它同时把自动连接驱动起停，否则切了也不会互连。
+                const r = args.topology
+                    ? await applyTopology(args.topology)
+                    : { topology: mesh.topology, dialTargets: mesh.dialTargets().map((x) => x.deviceId) };
+                return {
+                    ...r,
+                    self: identity.deviceId,
+                    note: mesh.topology === TOPOLOGY.mesh
+                        ? '每台设备都会主动连已知设备；两端按 deviceId 字典序仲裁，不会重复建连。'
+                        : '星型：只有 hub 监听，各设备拨入。设备之间不直连。',
+                };
+            },
+        },
+        {
+            name: 'link_connect_device',
+            description: '主动连接一台**已配对**的设备（用 deviceId）。mesh 模式下会按字典序仲裁：不该我拨时返回 null，等对方连进来。',
+            parameters: {
+                device: { type: 'string', required: true, description: '目标 deviceId。' },
+                force: { type: 'boolean', description: '跳过拨号仲裁，强制主动拨（手动配对时用）。' },
+            },
+            required: ['device'],
+            async execute(args) {
+                if (!mesh) throw new Error('mesh 未启用（身份初始化失败）');
+                const conn = await mesh.dial(args.device, {
+                    force: Boolean(args.force),
+                    onConnection: (c) => registerMobileMethods(c),
+                });
+                if (!conn) return { connected: false, reason: '按拨号仲裁不该由本端发起，等对方连进来' };
+                return { connected: true, device: args.device, encrypted: Boolean(conn.sessionKey) };
+            },
+        },
     ];
 
     for (const spec of tools) {
@@ -570,6 +866,17 @@ function apply(ctx, config = {}) {
     void (async () => {
         try {
             await loadSaved();
+            // mesh 拓扑下先起自动连接：它负责**监听**入站（手机在 overlay 下也有
+            // 可达地址，别人能连进来）并周期性拨 dialTargets。star 拓扑下手机仍然
+            // 只做拨号方 —— 不监听，避免平白开一个入站端口。
+            if (mesh && mesh.topology === 'mesh') {
+                const started = await mesh.startAutoConnect({
+                    intervalMs: 5000,
+                    onConnection: (c) => registerMobileMethods(c),
+                });
+                log('mesh 自动连接已启动（监听=' + started.listening +
+                    (started.port ? ' 端口=' + started.port : '') + '）');
+            }
             if (state.saved.host && state.saved.token) {
                 await connect({});
                 log('已用保存的令牌自动重连到 ' + state.saved.host + ':' + state.saved.port);
@@ -578,6 +885,9 @@ function apply(ctx, config = {}) {
             log('自动重连未成功（不影响本地使用）：' + (error?.message ?? error));
         }
     })();
+
+    // 插件卸载时收掉定时器与监听 —— 否则热重载/停用后还在后台拨号。
+    ctx.effect(() => () => { void mesh?.stopAutoConnect?.(); }, 'dsh-link: mesh auto-connect');
 }
 
 export const name = '@dsh-android/link';

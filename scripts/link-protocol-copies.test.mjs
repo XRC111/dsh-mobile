@@ -18,7 +18,17 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SOURCE = path.join(ROOT, 'packages/dsh-link-protocol/lib');
-const FILES = ['protocol.js', 'connection.js', 'endpoint.js', 'secret.js'];
+// mesh 三件套也在其中：deviceId 算法与拨号仲裁必须两端一致，
+// 否则会出现「两边都以为自己该拨」→ 重复连接。
+const FILES = [
+    'protocol.js',
+    'connection.js',
+    'endpoint.js',
+    'secret.js',
+    'mesh-identity.js',
+    'mesh-registry.js',
+    'mesh-manager.js',
+];
 const TARGETS = [
     path.join(ROOT, 'desktop-plugins/@dsh-desktop/link/lib/link-protocol'),
     path.join(ROOT, 'plugins/@dsh-android/link/lib/link-protocol'),

@@ -45,6 +45,10 @@ const FILES = [
     'lib/link-protocol/netinfo.js',
     'lib/link-protocol/llmrelay.js',
     'lib/link-protocol/relayexec.js',
+    // mesh 三件套：桌面侧也要用它做多设备去重与寻址。
+    'lib/link-protocol/mesh-identity.js',
+    'lib/link-protocol/mesh-registry.js',
+    'lib/link-protocol/mesh-manager.js',
 ];
 
 /**
