@@ -68,15 +68,48 @@ jobs:
       - name: 装 Android NDK
         run: |
           set -euo pipefail
-          # ubuntu-24.04 镜像自带 NDK（27.3/28.2/29.0 三个版本），
-          # ANDROID_NDK_LATEST_HOME 指向最新的那个。不用装完整 SDK。
-          ndk_dir="${ANDROID_NDK_LATEST_HOME}"
+          # ⚠️ 刻意用 NDK **26.1.10909125**，不是 runner 镜像自带的最新版本。
+          #
+          #    直接用 ANDROID_NDK_LATEST_HOME（当时是 30.x）会挂在 kcp-sys 的
+          #    bindgen 上：
+          #      sysroot/usr/include/sys/cdefs.h:365:2: error:
+          #        Unversioned target triples are not supported!
+          #    NDK 30 的 clang 不再接受不带 API 版本的 triple，而 Rust 的
+          #    `aarch64-linux-android` 正是无版本的。
+          #
+          #    这个版本不是随便挑的，是 EasyTier 官方自己钉的：
+          #      · .github/workflows/mobile.yml → packages: 'ndk;26.0.10792818'
+          #      · android.nix → ndkVersion = "26.1.10909125"
+          #    跟着官方走，能省掉一类「新版 NDK 更严」导致的交叉编译问题。
+          ndk_version="26.1.10909125"
+          ndk_dir="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}/ndk/${ndk_version}"
+          if [ ! -d "${ndk_dir}" ]; then
+            sdkmanager --install "ndk;${ndk_version}" || {
+              echo "SDK 里没有 ndk;${ndk_version}，改用 setup-android"; exit 1; }
+          fi
+          test -d "${ndk_dir}" || { echo "NDK 未就位: ${ndk_dir}"; exit 1; }
           echo "ANDROID_NDK_HOME=${ndk_dir}" >> "${GITHUB_ENV}"
           echo "NDK_HOME=${ndk_dir}" >> "${GITHUB_ENV}"
-          test -d "${ndk_dir}" || {
-            echo "runner 上没有 NDK: ${ndk_dir}"; exit 1; }
           echo "NDK: ${ndk_dir}"
-          cat "${ndk_dir}/source.properties" | grep Pkg.Revision || true
+          grep Pkg.Revision "${ndk_dir}/source.properties" || true
+
+      # ⚠️ 这几个变量是 android.nix 里 EasyTier 显式设的，照抄。
+      #    少了它们，kcp-sys / zstd-sys 这类 -sys crate 的 bindgen 会在
+      #    NDK 自带的 sysroot 之外找不到头文件（cdefs.h 那类报错）。
+      #    android.nix 里 KCP_SYS_EXTRA_HEADER_PATH 还拼了 glibc_multi 的 include，
+      #    那是 nix 构建环境特有的，这里没有对应物，只给 NDK 那半段。
+      - name: 设 NDK 头文件路径
+        run: |
+          set -euo pipefail
+          toolchain="${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64"
+          clang_ver="$(ls "${toolchain}/lib/clang" | sort -V | tail -1)"
+          echo "LIBCLANG_PATH=${toolchain}/lib" >> "${GITHUB_ENV}"
+          echo "BINDGEN_EXTRA_CLANG_ARGS=--sysroot=${toolchain}/sysroot" >> "${GITHUB_ENV}"
+          echo "KCP_SYS_EXTRA_HEADER_PATH=${toolchain}/lib/clang/${clang_ver}/include" >> "${GITHUB_ENV}"
+          echo "detected clang: ${clang_ver}"
+          echo "LIBCLANG_PATH=${LIBCLANG_PATH}"
+          echo "BINDGEN_EXTRA_CLANG_ARGS=${BINDGEN_EXTRA_CLANG_ARGS}"
+          echo "KCP_SYS_EXTRA_HEADER_PATH=${KCP_SYS_EXTRA_HEADER_PATH}"
 
       # ⚠️ protoc 必须装 —— EasyTier 的依赖 prost-wkt-types 在 build.rs 里
       #    调 protoc 生成代码，缺了会 panic：
@@ -140,9 +173,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: easytier-src/target
-          key: easytier-ndk-${{ inputs.easytier_ref || 'v2.6.4' }}-${{ runner.os }}-${{ hashFiles('easytier-src/easytier-contrib/**/Cargo.lock', 'easytier-src/Cargo.lock') }}
+          # NDK 版本进 key：换 NDK 后 .so 的 ABI/链接行为会变，
+          # 命中旧缓存会拿到用错 NDK 编出来的产物，而且看不出来。
+          key: easytier-ndk-26.1.10909125-${{ inputs.easytier_ref || 'v2.6.4' }}-${{ runner.os }}-${{ hashFiles('easytier-src/easytier-contrib/**/Cargo.lock', 'easytier-src/Cargo.lock') }}
           restore-keys: |
-            easytier-ndk-${{ inputs.easytier_ref || 'v2.6.4' }}-${{ runner.os }}-
+            easytier-ndk-26.1.10909125-${{ inputs.easytier_ref || 'v2.6.4' }}-${{ runner.os }}-
 
       - name: 缓存 cargo registry
         uses: actions/cache@v4
