@@ -275,7 +275,14 @@ async function main() {
 
     // 3) tar.gz（复用 dsh-desktop 的 tar 包；系统 tar.exe 被 shim 拦截）
     console.log('[2/3] tar.gz 打包（gzip level 6）…');
-    const req = createRequire(path.join('D:/code/dsh-desktop/', 'package.json'));
+    // ⚠️ 这里曾经**硬编码** 'D:/code/dsh-desktop/'，而上面的 SRC 明明支持
+    //    DSH_RUNTIME_SRC / DSH_DESKTOP 环境变量。两处不一致的后果是：
+    //    在 CI 或别人机器上，runtime 源能按环境变量找到（守卫放行），
+    //    却在 require('tar') 这一步因为路径写死而失败 —— 报错指向 tar 而不是
+    //    「路径不对」，极难定位。统一走同一个解析结果。
+    const desktopRepo = process.env.DSH_DESKTOP
+        ?? (process.env.DSH_RUNTIME_SRC ? path.dirname(path.dirname(SRC)) : 'D:/code/dsh-desktop');
+    const req = createRequire(path.join(desktopRepo, 'package.json'));
     const tar = req('tar');
     const t0 = Date.now();
     await tar.c({

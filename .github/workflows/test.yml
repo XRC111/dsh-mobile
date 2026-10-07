@@ -34,6 +34,12 @@ defaults:
   run:
     shell: bash
 
+env:
+  # 三个脚本默认找**本机路径** D:/code/dsh-desktop，CI 上不存在。显式指到上面
+  # checkout 出来的目录，否则 sync/copies 会「路径不存在」或 worse —— 静默跳过
+  # 校验，看起来是绿的。path 是相对工作区的，与 checkout 的 path 参数一致。
+  DSH_DESKTOP_REPO: ${{ github.workspace }}\dsh-desktop
+
 jobs:
   node-tests:
     # windows-latest 与桌面仓库一致；这里没有平台相关逻辑，
@@ -44,13 +50,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 拉 dsh-desktop（分发副本与运行时来源）
+        uses: actions/checkout@v4
+        with:
+          # ⚠️ 必须显式拉这个仓库。三个脚本默认去找**本机路径** D:/code/dsh-desktop：
+          #    · sync-desktop-plugin.mjs 要把插件分发副本写进 dsh-desktop 仓库；
+          #    · test:link-copies 要逐字节校验那份分发副本；
+          #    · pack-runtime.mjs 从 dsh-desktop/resources/dsh-runtime 取运行时。
+          # 不拉的后果：前两个要么报错、要么**静默跳过校验**（看起来是绿的，
+          # 实际根本没测）；第三个直接失败。
+          repository: XRC111/dsh-desktop
+          path: dsh-desktop
+
+      # ⚠️ 不设 cache: 'npm'，不跑 npm ci：这个仓库 dependencies 与
+      #    devDependencies 都是空的，也没有 package-lock.json。
+      #    setup-node 的 cache 找不到 lock 文件会直接报错（首次跑就栽在这）。
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: npm
-
-      - name: 装依赖
-        run: npm ci || npm install --no-audit --no-fund
 
       - name: 同步协议副本到两端插件
         run: |
@@ -72,18 +89,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 同 node-tests：pack-runtime 从 dsh-desktop/resources/dsh-runtime 取运行时，
+      # 那是本机路径，CI 上必须显式拉。
+      - name: 拉 dsh-desktop（运行时来源）
+        uses: actions/checkout@v4
+        with:
+          repository: XRC111/dsh-desktop
+          path: dsh-desktop
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: npm
 
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
-
-      - name: 装依赖
-        run: npm ci || npm install --no-audit --no-fund
 
       - name: 打包运行时
         run: |
