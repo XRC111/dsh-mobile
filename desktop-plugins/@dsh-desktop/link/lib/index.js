@@ -33,7 +33,7 @@ import { startLinkServer, connectToHost } from './link-protocol/endpoint.js';
 import { DESKTOP_METHODS, COMMON_METHODS, DEFAULT_PORT, makePairingCode, makeToken, fileChunks, TRANSIT_METHOD, TRANSIT_STREAM_METHOD } from './link-protocol/protocol.js';
 import { seal, open } from './link-protocol/secret.js';
 import { registerRoutes } from './link-protocol/routes.js';
-import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_ADVERTISED, RELAY_POLICY, relayStream } from './link-protocol/llmrelay.js';
+import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_ADVERTISED, RELAY_POLICY, relayStream, LIST_METHOD, LIST_ADVERTISED } from './link-protocol/llmrelay.js';
 import { executeLocally } from './link-protocol/relayexec.js';
 import { describeAddresses } from './link-protocol/netinfo.js';
 import { loadOrCreateIdentity, TOPOLOGY } from './link-protocol/mesh-identity.js';
@@ -79,7 +79,46 @@ const DESKTOP_CAPS = [...DESKTOP_METHODS, ...COMMON_METHODS, TRANSIT_METHOD];
  * @param {object} ctx Cordis 上下文，用于探测本机是否挂了 llm 服务。
  */
 function advertisedMethods(ctx) {
-    return [...DESKTOP_CAPS, ...(ctx.get('llm') ? [RELAY_ADVERTISED] : [])];
+    return [...DESKTOP_CAPS, ...(ctx.get('llm') ? [RELAY_ADVERTISED, LIST_ADVERTISED] : [])];
+}
+
+/**
+ * 取本机 provider 列表（跨端应答用）。
+ *
+ * ⚠️ 只回**名字与展示名**，不回任何凭据或配置 —— 对端拿到的是「桌面上有哪几个
+ *   provider，叫什么名字」，而不是「怎么登录它们」。凭据留在本机，与
+ *   llm.relay 的原则一致。
+ *
+ * @returns {string[]} provider 名列表。
+ */
+function safeProviders(llm) {
+    try {
+        return llm.listProviders().map((p) => p.id ?? p.name ?? String(p));
+    } catch (e) {
+        // listProviders 是同步读内存，理论上不会失败；真失败也不该让整个应答崩。
+        console.warn('[link] 取 provider 列表失败：' + e.message);
+        return [];
+    }
+}
+
+/**
+ * 取某个 provider 的模型列表，失败时返回空数组。
+ *
+ * ⚠️ **必须容错**：某个 provider 没配好（缺 key、登录态过期）时 listModels 会
+ *   抛错。让它冒泡出去的结果是「桌面的模型一个都看不到」——而实际只是少了
+ *   一个 provider。前者让人以为功能坏了，后者才是真相。
+ */
+async function safeModels(llm, provider) {
+    try {
+        const list = await llm.listModels(provider);
+        if (!Array.isArray(list)) return [];
+        // 只保留渲染需要的字段：完整对象可能含配置或凭据相关的字段，
+        // 跨端传没必要也不该传。
+        return list.map((m) => (typeof m === 'string' ? m : { id: m.id, name: m.name ?? m.id }));
+    } catch (e) {
+        console.warn(`[link] 取 ${provider} 的模型列表失败（跳过该 provider）：` + e.message);
+        return [];
+    }
 }
 
 /**
@@ -441,6 +480,34 @@ function apply(ctx, config = {}) {
                 throw e;
             }
             return executeLocally({ llm }, emit, args, meta);
+        });
+        // 跨端取模型列表（手机侧连上后预取一次，缓存成本地快照）。
+        //
+        // ⚠️ provider 列表在这里**顺带**带上，不另设方法：它就是本机的
+        //    listProviders()，与 models 同源，分成两个方法只会多一次往返。
+        //
+        // 每个 provider 的 listModels 单独容错：某个 provider 没配好（缺 key、
+        // 登录态过期）不该让整个列表失败 —— 那会让「桌面的模型全都看不到」，
+        // 而实际只是少了一个。
+        conn.handle(LIST_METHOD, async ({ provider } = {}) => {
+            const llm = ctx.get('llm');
+            if (!llm) {
+                const e = new Error('本机没有 llm 服务，无法提供模型列表。');
+                e.code = 'NO_LOCAL_LLM';
+                throw e;
+            }
+            const providers = safeProviders(llm);
+            if (provider) {
+                return { providers, models: await safeModels(llm, provider) };
+            }
+            // 不指定 provider：把所有 provider 的模型一次性取回来（并发）。
+            // 手机侧只需要一个快照；分批取反而多次往返。
+            const models = {};
+            await Promise.all(providers.map(async (p) => {
+                const list = await safeModels(llm, p);
+                if (list.length) models[p] = list;
+            }));
+            return { providers, models };
         });
         conn.handle('computer.status', async () => {
             const w = await loadWin32();

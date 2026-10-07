@@ -318,6 +318,19 @@ function apply(ctx, config = {}) {
         }
         // 记下对端是否宣告了 llm.relay —— 决定"经另一台设备调用"该不该出现。
         peerOffersRelay = (conn.peerMethods ?? []).includes(RELAY_METHOD);
+        // 桌面向导模型列表 —— **异步、不阻塞**连接返回。
+        //
+        // ⚠️ 刻意不等它：listModels 会真的去问 API（网络往返，可能几秒），
+        //    await 下来就是「点连接后界面卡住几秒」。用户要的是立刻看到
+        //    「已连接」，模型列表晚几秒补上没关系。
+        //
+        // 失败也**不**影响连接结果：拿不到列表只是「下拉里少几个模型」，
+        // 而让连接失败就完全说不通了。
+        if ((conn.peerMethods ?? []).includes(LIST_ADVERTISED)) {
+            prefetchRemoteModels(conn).catch((e) => {
+                console.warn('[link] 取桌面模型列表失败（不影响连接）：' + e.message);
+            });
+        }
         // 桌面对首次配对会发放长期令牌，存下来供重连。mode 也一起存，
         // 这样重连时不必再问用户"上次是怎么连的"。
         await save({ host, port, mode, ...(conn.issuedToken ? { token: conn.issuedToken } : {}) });
@@ -331,6 +344,43 @@ function apply(ctx, config = {}) {
             issuedToken: Boolean(conn.issuedToken),
             desktopMethods: conn.peerMethods,
         };
+    }
+
+    /**
+ * 预取桌面的 provider / 模型列表，存成本地快照。
+ *
+ * ── 为什么是「快照」而不是实时转发 ──────────────────────────────────────────
+ * 用户展开模型下拉时读的是这个快照，不产生网络往返。若改成实时转发，
+ * 每展开一次都要等一次 `llm.listModels`（那会真的去问 API），下拉会明显卡顿。
+ * 代价是列表是连接时刻的快照 —— 对「桌面上有哪些模型」这个问题，
+ * 连接期间不会变，够用。
+ *
+ * ── 不注册成本地 provider 的原因 ────────────────────────────────────────────
+ * 本机没有桌面的凭据，注册一个同名 provider 只会在真正调用时报错，
+ * 还可能遮住本机同名的真 provider。所以这里**只做展示**：列表里出现
+ * 「经电脑：xxx」，实际调用仍走 `llm.remote`（凭据不出本机）。
+ *
+ * @param {object} conn 已建立的连接。
+ * @returns {Promise<{providers: string[], models: Record<string, any[]>, at: number}>}
+ */
+async function prefetchRemoteModels(conn) {
+        const res = await conn.call(LIST_METHOD, {});
+        const providers = Array.isArray(res?.providers) ? res.providers : [];
+        const models = res?.models && typeof res.models === 'object' ? res.models : {};
+        // 汇总成一张「provider → 模型名」的表给界面用。
+        const flat = [];
+        for (const p of providers) {
+            for (const m of models[p] ?? []) {
+                flat.push({
+                    provider: p,
+                    // 模型项可能是字符串，也可能是 { id, name }（桌面侧做过裁剪）。
+                    id: typeof m === 'string' ? m : m.id,
+                    label: typeof m === 'string' ? m : (m.name ?? m.id),
+                });
+            }
+        }
+        remoteModels = { providers, models, flat, at: Date.now() };
+        return remoteModels;
     }
 
     /** 取当前连接，没有就报清楚。 */
@@ -476,6 +526,18 @@ function apply(ctx, config = {}) {
             desktop: state.conn?.peer ?? null,
             encrypted: Boolean(state.conn?.sessionKey),
             desktopMethods: state.conn?.peerMethods ?? [],
+            // 桌面上的模型（连接后异步预取的快照）。
+            // 放在 llmRelay 旁边而不是独立一块：它们是同一件事的两面 ——
+            // 「有哪些模型可选」与「调用时会离开本机」，界面上要一起说明。
+            remoteModels: remoteModels
+                ? {
+                    providers: remoteModels.providers,
+                    flat: remoteModels.flat,
+                    // 快照时刻，让用户知道这不是实时值。
+                    fetchedAt: remoteModels.at,
+                    note: '以下模型来自桌面，实际调用仍经桌面执行（凭据不出桌面）。',
+                }
+                : null,
             savedHost: state.saved.host ?? null,
             savedPort: state.saved.port ?? null,
             mode: state.saved.mode ?? 'direct',
@@ -510,6 +572,11 @@ function apply(ctx, config = {}) {
     let remotePolicy = RELAY_POLICY.localFirst;
     /** 对端（桌面）是否宣告了 llm.relay。配对时刷新。 */
     let peerOffersRelay = false;
+    /**
+     * 桌面的模型列表快照（连接后异步预取）。
+     * @type {{providers: string[], models: object, flat: any[], at: number}|null}
+     */
+    let remoteModels = null;
     ctx.effect(() => {
         if (!ctx.get('llm')) return;
         // 让 "经另一台设备调用" 出现在模型选择器里。

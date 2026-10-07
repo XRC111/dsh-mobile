@@ -47,6 +47,37 @@ export const RELAY_POLICY = {
 export const RELAY_METHOD = 'llm.relay';
 
 /**
+ * 跨端取模型列表的方法名。
+ *
+ * ── 为什么需要它（listProviders 是同步的，跨端做不到）───────────────────────
+ * 直觉上「共享模型列表」= 把 `llm.listProviders()` 转发过去就行，但**它做不到**：
+ *
+ *   dsh-llm/lib/index.js：
+ *     listProviders() {
+ *       return [...this.adapters.values()].map(…)   // ← 同步，只读**本机内存**
+ *     }
+ *
+ * 它是同步函数、只返回本机已注册的 adapter，不发任何请求，也就**无从得知对端
+ * 有什么**。要让手机看到桌面的 provider，本质上需要一次 IPC —— 而同步函数
+ * 等不了。
+ *
+ * `listModels(provider)` 是 async（`await this.registration(provider).adapter
+ * .listModels(provider)`），会真的去问 API，所以它**可以**跨端转发。
+ *
+ * 于是分工是：
+ *   · provider 列表  → 桌面在**应答时**顺带带上（一次往返，不额外请求）
+ *   · model 列表     → 按需转发 llm.listModels
+ *   · 手机侧         → 连上后异步预取一次，缓存成本地快照
+ *
+ * 用户展开下拉时读的是本地缓存，不产生额外往返 —— 否则每展开一次都要等
+ * 一次网络请求，明显卡顿。
+ */
+export const LIST_METHOD = 'llm.list';
+
+/** 宣告的方法名（与转发能力一起宣告）。 */
+export const LIST_ADVERTISED = LIST_METHOD;
+
+/**
  * 服务方在握手里**宣告**的方法名。
  *
  * 为什么单独列：`methods` 列表是给对端做能力发现的（peerMethods）。转发能力

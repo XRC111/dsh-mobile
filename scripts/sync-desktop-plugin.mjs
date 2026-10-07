@@ -78,9 +78,22 @@ if (fs.existsSync(REPO)) {
     console.log('[link] 跳过仓库同步（找不到 ' + REPO + '，可用 DSH_DESKTOP_REPO 指定）');
 }
 
-// 2) 已安装的 DSH Desktop（让本次运行就能用）
+// 2) 已安装的 DSH Desktop。
+//
+// ⚠️⚠️ **默认不写**，要写必须显式加 --installed。
+//
+// 这不是洁癖：这个脚本在多处被自动调用（sync-link-protocol 之后、CI、
+// 我自己的例行流程），而它会**直接覆盖正在运行的 DSH Desktop 的插件**。
+// 后果不是「改错代码」，而是「用户的应用被动了而他不知道」——
+// 而且已安装的那份由应用自己的热更机制管理（带 dshDesktopBuild 戳、
+// 版本号由内容哈希自动升），手动覆盖可能与它不一致。
+//
+// 真正需要「改了立刻在应用里生效」时（开发调试），才用 --installed。
+const wantInstalled = process.argv.includes('--installed');
 const installed = path.join(HOME, 'profiles/node_modules/@dsh-desktop/link');
-if (fs.existsSync(path.join(HOME, 'profiles/node_modules/@dsh-desktop'))) {
+if (!wantInstalled) {
+    console.log('[link] 跳过已安装目录（要写请加 --installed）');
+} else if (fs.existsSync(path.join(HOME, 'profiles/node_modules/@dsh-desktop'))) {
     const n = syncTo(installed);
     console.log('[link] 已同步 ' + n + ' 个文件到已安装目录');
 } else {
