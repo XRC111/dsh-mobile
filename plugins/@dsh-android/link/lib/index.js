@@ -29,11 +29,11 @@ import path from 'node:path';
 import os from 'node:os';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { connectToHost } from './link-protocol/endpoint.js';
-import { TRANSIT_METHOD } from './link-protocol/protocol.js';
+import { TRANSIT_METHOD, TRANSIT_STREAM_METHOD } from './link-protocol/protocol.js';
 import { MOBILE_METHODS, DEFAULT_PORT, fileChunks } from './link-protocol/protocol.js';
 import { open } from './link-protocol/secret.js';
 import { registerRoutes } from './link-protocol/routes.js';
-import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_POLICY } from './link-protocol/llmrelay.js';
+import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_POLICY, RELAY_ADVERTISED, relayStream } from './link-protocol/llmrelay.js';
 import { loadOrCreateIdentity, TOPOLOGY } from './link-protocol/mesh-identity.js';
 import { Registry } from './link-protocol/mesh-registry.js';
 import { LinkManager, shouldDial } from './link-protocol/mesh-manager.js';
@@ -333,50 +333,6 @@ function apply(ctx, config = {}) {
         };
     }
 
-    /**
-     * 把请求转发到对端，并把远端产生的 chunk 逐块交回本地消费方。
-     *
-     * waterfall 的监听器必须返回 AsyncIterable<StreamChunk>，所以这里把
-     * 回调式的事件流包成一个异步生成器。
-     *
-     * ⚠️ 队列不能丢：远端是"边算边发"，本地在 await 生成器时才拉取。若只留
-     *    最后一个值，用户看到的就是"等半天整段蹦出来" —— 那正是我们要避免的。
-     *
-     * @param {object} conn - 已配对的连接。
-     * @param {object} options - 原始 GenerateOptions（原样转发，不裁剪字段）。
-     * @returns {AsyncGenerator<object>} 远端的 chunk。
-     */
-    async function* relayStream(conn, options) {
-        /** @type {object[]} 等待消费的 chunk。 */
-        const queue = [];
-        let done = false;
-        let failure = null;
-        let wake = null;
-        const push = (chunk) => { queue.push(chunk); wake?.(); wake = null; };
-        const finish = (error) => { if (error) failure = error; done = true; wake?.(); wake = null; };
-
-        // 远端结束或失败时，结束整个生成器。
-        const settled = conn.callStream(RELAY_METHOD, options, push).then(
-            () => finish(null),
-            (error) => finish(error),
-        );
-
-        try {
-            for (;;) {
-                while (queue.length > 0) yield queue.shift();
-                if (done) break;
-                await new Promise((resolve) => { wake = resolve; });
-            }
-            while (queue.length > 0) yield queue.shift();
-            if (failure) throw failure;
-        } finally {
-            // 本地消费方提前退出（用户取消 / 会话中断）时结束这次转发。
-            // settled 只是用来兜住"远端还没结束就走了"的 rejection，
-            // 不 await —— await 它会把取消也变成等待。
-            settled.catch(() => {});
-        }
-    }
-
     /** 取当前连接，没有就报清楚。 */
     function requireConn() {
         if (!state.conn || state.conn.closed) throw new Error('还没连接桌面。先跑 link_connect（首次需要配对码）。');
@@ -568,19 +524,77 @@ function apply(ctx, config = {}) {
             // 没开启转发、或这个 provider 本来就是"经另一台设备调用"，
             // 都按原样本地走。
             if (!remoteEnabled || !options || options.provider === REMOTE_PROVIDER) return next();
-            const conn = state.conn;
-            if (!conn || conn.closed) {
-                // 没连上桌面就**明确报错**。这里若回落 next()，用户会看到
-                // "本地没凭据"这类误导性错误，而真正的原因是没配对。
-                const e = new Error('未连接到桌面，无法转发模型调用。请先在「远程联动」里配对，或关闭转发。');
-                e.code = 'NO_REMOTE_LINK';
-                throw e;
-            }
-            return relayStream(conn, options);
+            return relayViaAnyPeer(options);
         };
         ctx.on('llm/stream', forward);
         return () => ctx.off('llm/stream', forward);
     }, 'dsh-link: llm relay');
+
+    /**
+     * 把请求转给**任意一台**宣告了模型转发能力的设备。
+     *
+     * 依次尝试：
+     *   1. 直连 —— 目标在线且已宣告 llm.relay（最常见，手机连着桌面）；
+     *   2. 经中转 —— 目标只与 hub 相连（两台手机之间就是这样）。
+     *      走 `relay.stream`（流式中转），而不是 `relay.call` ——
+     *      模型转发是 call-stream，用 call 转不了，那正是它此前失败的原因。
+     *
+     * 每一步失败都带着下一步的成因继续往下找，全失败才报错，且错误里列出
+     * 「试过谁」—— 否则多设备场景下只会得到一句「无法转发」，无从排查。
+     *
+     * @param {object} options - 原始 GenerateOptions。
+     * @returns {AsyncGenerator<object>} 远端的 chunk。
+     */
+    async function* relayViaAnyPeer(options) {
+        if (!mesh) {
+            const e = new Error('mesh 未启用（身份初始化失败），无法转发模型调用。');
+            e.code = 'NO_REMOTE_LINK';
+            throw e;
+        }
+        const online = mesh.onlinePeers();
+        const withRelay = online.filter((p) => (p.capabilities ?? []).includes(RELAY_ADVERTISED));
+        const tried = [];
+
+        // 1) 直连
+        for (const p of withRelay) {
+            const conn = mesh.connectionTo(p.deviceId);
+            if (!conn || conn.closed) { tried.push(p.name + '（连接已断）'); continue; }
+            try {
+                return yield* relayStream(conn, options, 'phone→peer');
+            } catch (error) {
+                // 转发失败可能是「对端执行出错」（模型没凭据等），也可能是链路问题。
+                // 前者换一台也没用，但后者值得试 —— 所以记下来继续，最后一并报。
+                tried.push(p.name + '（' + (error?.message ?? error) + '）');
+            }
+        }
+
+        // 2) 经中转：找一台宣告了流式中转能力（relay.stream）的设备。
+        const via = online.find((p) => (p.capabilities ?? []).includes(TRANSIT_STREAM_METHOD)
+            && !withRelay.some((w) => w.deviceId === p.deviceId));
+        if (via) {
+            const conn = mesh.connectionTo(via.deviceId);
+            if (conn && !conn.closed) {
+                // 目标没说是谁 —— 由中转方自己挑它连着的、宣告了 llm.relay 的那台。
+                // 不能让这里指定 deviceId：调用方（用户/模型）通常不知道目标是谁，
+                // 而中转方手里才有「谁在线、谁有模型」这份信息。
+                return yield* relayStream(
+                    conn,
+                    { ...options, __relayPreferRelay: true },
+                    'phone→via→peer',
+                );
+            }
+        }
+
+        const e = new Error(
+            online.length === 0
+                ? '没有已连接的其它设备，无法转发模型调用。请先在「远程联动」里配对。'
+                : '无法转发模型调用：' + (tried.length
+                    ? '试过的设备都失败了 —— ' + tried.join('；')
+                    : '已连接的设备都没有宣告模型转发能力（需要对方的 dsh 上有 llm 服务）。'),
+        );
+        e.code = 'NO_REMOTE_LINK';
+        throw e;
+    }
 
     // GUI 用的 HTTP 路由（挂在已鉴权的 Connection 上）。
     // 手机外壳页面通过本机 dsh 的地址调它们 —— 不用让用户在对话里敲 JSON。

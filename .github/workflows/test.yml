@@ -1,0 +1,105 @@
+# 回归测试：跑 dsh-mobile 的全部 node 测试套件。
+#
+# ── 为什么现在才有 CI ────────────────────────────────────────────────────────
+# 本仓库原先没有任何 CI，测试一直在本机跑。本机没有硬上限，容易出现
+# 「改完顺手跑一下，忘了跑全套」—— 而这次做流式中转时就真的漏了
+# test:link-copies（分发副本没同步），是 sync 之后才补跑才发现的。
+# 放进 CI 之后，漏跑不再依赖记性。
+#
+# ── 跑什么 ────────────────────────────────────────────────────────────────────
+# 直接跑 `npm run test:all`，不逐个列举 —— 少写一个套件名就等于少跑一个测试，
+# 而这种遗漏在 CI 上表现为「它一直是绿的」，比红更危险。
+# 套件清单只有一个来源：package.json。
+#
+# ── 为什么先 sync 再测 ───────────────────────────────────────────────────────
+# test:link-copies 会逐字节校验「规范源 ↔ 分发副本 ↔ 已安装目录」三处一致。
+# 不先 sync 就测，改了规范源必然红 —— 但那是「没同步」的正常状态，不是缺陷。
+# 所以顺序固定为：pack（可选）→ sync → test。
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  node-tests:
+    # windows-latest 与桌面仓库一致；这里没有平台相关逻辑，
+    # 但保持同一 runner 能让「两仓库的失败原因可比」。
+    runs-on: windows-2022
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: 装依赖
+        run: npm ci || npm install --no-audit --no-fund
+
+      - name: 同步协议副本到两端插件
+        run: |
+          # ⚠️ 必须在测试**之前**跑：test:link-copies 校验三处副本逐字节一致。
+          #    不同步的话它必然红，而那是「还没同步」而非「有缺陷」——
+          #    两者的区别很重要，混在一起会让人养成「看见 copies 红就忽略」的习惯。
+          node scripts/sync-link-protocol.mjs
+          node scripts/sync-desktop-plugin.mjs
+
+      - name: 跑全部测试
+        run: npm run test:all
+
+  apk-build:
+    # APK 构建单开一个 job：它要 44MB 运行时与 Gradle 缓存，比测试慢得多，
+    # 混在一起会让「测试挂了」要等构建完才看得到。
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 装依赖
+        run: npm ci || npm install --no-audit --no-fund
+
+      - name: 打包运行时
+        run: |
+          # ⚠️ 这一步**必须**在 build:apk 之前。之前踩过：直接跑 gradlew
+          #    assembleDebug 出来的 APK 里 plugins 的 JS 是旧的（assets 里那份
+          #    指纹没变就不重拷），表现是「代码改了、功能没变」。
+          npm run pack:runtime
+
+      - name: 构建 APK（debug）
+        run: npm run build:apk
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-android-debug-apk
+          path: |
+            app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+          if-no-files-found: error
