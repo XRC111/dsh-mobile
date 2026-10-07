@@ -65,8 +65,20 @@ const DESKTOP_CAPS = [...DESKTOP_METHODS, ...COMMON_METHODS, TRANSIT_METHOD];
  *    link_connect 的 methods），一处改了另一处漏改就会出现
  *    「别人连我时能看到 llm.relay、我连别人时对方却看不到」的诡异不一致。
  *    与手机侧的 MOBILE_CAPS 同一原则：单一来源。
+ *
+ * ⚠️⚠️ ctx 必须**由调用方传入**，不能在函数体里直接引用。
+ *    这个函数定义在模块顶层（definePlugin 之外），那里根本没有 ctx 标识符 ——
+ *    于是调用即抛 `ReferenceError: ctx is not defined`。
+ *    表现极具迷惑性：模块能加载、服务能启动、界面正常，只有真正去点
+ *    「启动服务」或 link_connect 时才炸，而报错只有一个光秃秃的
+ *    ReferenceError，完全指不到是这行的问题。
+ *
+ *    教训：把逻辑提到模块顶层以复用时，**依赖也要一起提**（改成参数），
+ *    不能只提逻辑。
+ *
+ * @param {object} ctx Cordis 上下文，用于探测本机是否挂了 llm 服务。
  */
-function advertisedMethods() {
+function advertisedMethods(ctx) {
     return [...DESKTOP_CAPS, ...(ctx.get('llm') ? [RELAY_ADVERTISED] : [])];
 }
 
@@ -670,9 +682,9 @@ function apply(ctx, config = {}) {
             },
             // 宣告 llm.relay：让对端知道这台机器能代为执行模型调用。
             // 但**只有本机真的挂了 llm 服务**才宣告 —— 对端据此决定要不要开转发。
-            // 走 advertisedMethods() 而不是在这里再写一遍表达式：两处各写一份时，
+            // 走 advertisedMethods(ctx) 而不是在这里再写一遍表达式：两处各写一份时，
             // 一处改了另一处漏改就会「别人连我时可用、我连别人时不可用」。
-            methods: advertisedMethods(),
+            methods: advertisedMethods(ctx),
             log,
             onConnection(conn) {
                 state.conn = conn;
@@ -1083,7 +1095,7 @@ function apply(ctx, config = {}) {
                             deviceId: identity?.deviceId,
                             kind: 'desktop',
                         },
-                        methods: advertisedMethods(),
+                        methods: advertisedMethods(ctx),
                         log,
                     });
                     const peerId = conn.peer?.deviceId;
