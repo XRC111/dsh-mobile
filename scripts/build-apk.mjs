@@ -70,11 +70,32 @@ if (!env.GRADLE_USER_HOME) {
 const args = process.argv.slice(2);
 if (args.length === 0) args.push(':app:assembleDebug');
 
+/**
+ * 产物路径：从 gradle 任务名推导出 buildType。
+ *
+ * ⚠️ 之前这里**写死** app/build/outputs/apk/debug/app-debug.apk，于是：
+ *   · 跑 assembleRelease 时删的是 debug 的产物、查的也是 debug 的；
+ *   · release 构建明明成功，脚本却报「仍然没有产物：…app-debug.apk」。
+ * 后果不是「构建失败」而是**「构建成功但脚本说失败」** —— 极易误判成
+ * 构建问题而去查 gradle，实际 gradle 早就 BUILD SUCCESSFUL 了。
+ *
+ * 之前几次「release 构建成功」其实读的是上一轮留下的旧 APK（时间戳没变），
+ * 也是这个 bug 掩盖的。
+ */
+function apkOutputPath(taskArgs) {
+    const task = taskArgs.find((a) => /^:app:assemble/i.test(a)) ?? ':app:assembleDebug';
+    // :app:assembleRelease → Release；:app:assembleW7Release → W7Release
+    const variant = task.slice(':app:assemble'.length);
+    // 首字母小写的 Gradle 目录名：Release → release
+    const dir = variant.charAt(0).toLowerCase() + variant.slice(1);
+    return path.join(ROOT, 'app', 'build', 'outputs', 'apk', dir, `app-${dir}.apk`);
+}
+
 // ⚠️ 先删旧 APK。实测：把一个更小的 APK 写到已存在的大 APK 上时，写入方没有
 // 截断文件，旧 APK 中段会留下几十 MB 的孤儿字节（实测 119.8MB 的产物写出
 // 163.6MB，中段 43.8MB 不属于任何 zip 条目）。APK 仍可解析、可安装，但体积
 // 虚高，排查很费时间。删掉旧产物让写入方从零开始。
-const apkOut = path.join(ROOT, 'app/build/outputs/apk/debug/app-debug.apk');
+const apkOut = apkOutputPath(args);
 fs.rmSync(apkOut, { force: true });
 
 console.log('[build] gradle: ' + gradle.label + ' (' + gradle.cmd + ')');

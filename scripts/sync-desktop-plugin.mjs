@@ -45,9 +45,14 @@ const FILES = [
     'lib/link-protocol/netinfo.js',
     'lib/link-protocol/llmrelay.js',
     'lib/link-protocol/relayexec.js',
-    // 内嵌组网的 koffi 绑定。⚠️ 加它时忘了加进 FILES，同步后分发副本里没有 ——
-    //    于是下面 assertNoMissingFiles() 的断言被加进来挡住下一次。
     'lib/easytier.js',
+    // 「经另一台设备调用」的 llm adapter。
+    // ⚠️ 这个文件同时出现在 sync-link-protocol.mjs 的 FILES 里 —— 两个脚本各有一份
+    //    独立的清单，加新文件时**两处都要改**。漏了任一处的症状不同但都很难查：
+    //    漏这里 → assertNoMissingFiles() 直接抛错（本地就暴露）；
+    //    漏 sync-link-protocol 那份 → 两端插件里都没有，运行时
+    //    ERR_MODULE_NOT_FOUND，而打包一路绿灯。
+    'lib/link-protocol/remote-adapter.js',
     // mesh 三件套：桌面侧也要用它做多设备去重与寻址。
     'lib/link-protocol/mesh-identity.js',
     'lib/link-protocol/mesh-registry.js',

@@ -34,6 +34,7 @@ import { DESKTOP_METHODS, COMMON_METHODS, DEFAULT_PORT, makePairingCode, makeTok
 import { seal, open } from './link-protocol/secret.js';
 import { registerRoutes } from './link-protocol/routes.js';
 import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_ADVERTISED, RELAY_POLICY, relayStream, LIST_METHOD, LIST_ADVERTISED, safeProviders, safeModels } from './link-protocol/llmrelay.js';
+import { createRemoteAdapter, setForwardStream, isRemoteProvider } from './link-protocol/remote-adapter.js';
 import { executeLocally } from './link-protocol/relayexec.js';
 import { describeAddresses } from './link-protocol/netinfo.js';
 import { loadOrCreateIdentity, TOPOLOGY } from './link-protocol/mesh-identity.js';
@@ -340,20 +341,46 @@ function apply(ctx, config = {}) {
 
     ctx.effect(() => {
         if (!ctx.get('llm')) return;
-        // 让「经另一台设备调用」出现在本机的模型选择器里。
-        ctx.llm.registerConfigurableProviders([{
-            provider: REMOTE_PROVIDER,
-            displayName: REMOTE_PROVIDER_LABEL,
-            settingsNs: ctx.fiber?.entry?.options?.id ?? 'dsh-desktop-link',
-            settingsPath: [],
-        }]);
+        // ── 注册「经另一台设备调用」为**真正的** provider ───────────────────
+        //
+        // ⚠️ 这里原来调的是 `registerConfigurableProviders`，注释写「让它出现在
+        //    模型选择器里」—— **那是错的断言**。已核对 dsh-llm 源码：
+        //      registerConfigurableProviders → 写 this.directory（去哪填凭据）
+        //      listProviders()             → 读 this.adapters（能执行的实现）
+        //    两者不是一回事，所以它**从来没有出现在任何下拉里**。
+        //
+        // 现在注册真 adapter（实现见 link-protocol/remote-adapter.js）。
+        const adapter = createRemoteAdapter({ peers: () => relayPeers() });
+        setForwardStream((opts) => relayViaAnyPeer(opts));
+        ctx.llm.registerAdapter([REMOTE_PROVIDER], adapter);
         const forward = (options, next) => {
-            if (!relayEnabled || !options || options.provider === REMOTE_PROVIDER) return next();
+            // ⚠️ 用 isRemoteProvider 而不是 `=== REMOTE_PROVIDER`：adapter 注册的
+            //    是带设备后缀的 `llm-remote:<deviceId>`，等号判断会漏 ——
+            //    于是用户显式选了「经另一台设备调用」时请求被**再转发一次**。
+            if (!relayEnabled || !options || isRemoteProvider(options.provider)) return next();
             return relayViaAnyPeer(options);
         };
         ctx.on('llm/stream', forward);
         return () => ctx.off('llm/stream', forward);
     }, 'dsh-link: llm relay (client)');
+
+    /**
+     * 当前在线、且宣告了模型转发能力的设备（adapter 的数据源）。
+     *
+     * 与手机侧同名函数同构 —— 复制而非共用是因为两端各自的 mesh 实例不同，
+     * 而这段逻辑很短；共用要额外导出，收益不抵那点间接层。
+     */
+    function relayPeers() {
+        if (!mesh) return [];
+        return mesh.onlinePeers()
+            .filter((p) => (p.capabilities ?? []).includes(RELAY_ADVERTISED))
+            .map((p) => ({
+                deviceId: p.deviceId,
+                name: p.name,
+                capabilities: p.capabilities,
+                conn: p.conn ?? mesh.connectionTo?.(p.deviceId),
+            }));
+    }
 
     /**
      * 把请求转给**任意一台**宣告了模型转发能力的设备。
