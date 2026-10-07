@@ -1,0 +1,115 @@
+# 打包并上传 dsh 运行时，供 test.yml 的 apk-build 下载。
+#
+# ── 为什么单独一条流水线 ──────────────────────────────────────────────────────
+# 运行时是 43.9MB 的二进制，每次构建 APK 都传一遍很浪费。而它**很少变**
+# （跟着 dsh 上游版本走，不是跟着本仓库的代码走）。
+#
+# 拆成两条的后果是好的：
+#   · 运行时没变 → 只跑 apk-build，直接下载（几十秒）
+#   · 运行时变了 → 手动跑一次本 workflow，之后 apk-build 自动拿到新的
+#
+# ── 为什么不在 test.yml 里现编 ────────────────────────────────────────────────
+# 编它需要 dsh-desktop 的 resources/dsh-runtime —— 461MB / 26496 个文件，
+# 由 `pnpm install` 产出。而 checkout 的 path 参数既不能放到工作区内（会先
+# "Deleting the contents of <workspace>" 把主仓库清空），也不能指向工作区外
+# （直接拒绝 "is not under"）。要在 CI 里编就得先解决仓库间依赖，
+# 成本远大于收益。
+#
+# ── 怎么用 ────────────────────────────────────────────────────────────────────
+# 运行时变了的时候，在 dsh-android 本地跑：
+#     npm run pack:runtime && gh workflow run runtime-pack.yml
+# 没变就不用管 —— apk-build 会下载上一次上传的那份。
+#
+# artifact 保留 30 天；超过就先重跑一次本 workflow。
+name: runtime-pack
+
+on:
+  # 只手动触发。定时没有意义：运行时由 dsh 上游决定，本仓库无从得知它变了。
+  workflow_dispatch:
+    inputs:
+      dsh_desktop:
+        description: 'dsh-desktop 仓库路径（留空 = 试 D:/code/dsh-desktop 与 ../dsh-desktop）'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  pack:
+    runs-on: windows-2022
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 定位 dsh-desktop 并打包运行时
+        id: pack
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # pack-runtime 的守卫会给出可执行的指引，比我们自己拼路径再报「找不到」
+          # 清楚得多。所以：候选路径逐个试，全失败才把最后一次的输出原样抛出。
+          $hint = ${{ inputs.dsh_desktop }}
+          $candidates = @()
+          if ($hint) { $candidates += $hint }
+          $candidates += @(
+            "$env:GITHUB_WORKSPACE/../dsh-desktop",
+            'D:/code/dsh-desktop'
+          )
+
+          $last = ''
+          $packed = $false
+          foreach ($c in $candidates) {
+            $src = Join-Path $c 'resources/dsh-runtime'
+            if (-not (Test-Path $src)) {
+              Write-Host "跳过 $c —— 没有 resources/dsh-runtime"
+              continue
+            }
+            Write-Host "用 $src 打包…"
+            $env:DSH_RUNTIME_SRC = (Resolve-Path $src).Path
+            try {
+              npm run --silent pack:runtime
+              $packed = $true
+              break
+            } catch {
+              $last = $_
+              Write-Host "打包失败：$_"
+            }
+          }
+          if (-not $packed) {
+            Write-Host ''
+            Write-Host '找不到可用的 dsh-desktop 运行时源。'
+            Write-Host '这台 runner 上没有那个仓库 —— 它不是本仓库的一部分，'
+            Write-Host 'checkout 也不会把它带进来（path 既不能在工作区内、也不能在其外）。'
+            Write-Host ''
+            Write-Host '所以这条流水线只能在你本机跑完 pack:runtime 之后，'
+            Write-Host '用本 workflow 手动触发并把产物带上；或者直接改用'
+            Write-Host 'test.yml 的 apk-build，它会下载上一次上传的运行时。'
+            if ($last) { throw $last }
+            exit 1
+          }
+
+          $f = 'app/src/main/assets/bundle/dsh-runtime.bin'
+          if (-not (Test-Path $f)) { throw "打包后仍缺 $f" }
+          $mb = [math]::Round((Get-Item $f).Length / 1MB, 1)
+          Write-Host "运行时 $mb MB"
+          "mb=$mb" >> $env:GITHUB_OUTPUT
+
+      - name: 上传运行时
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-runtime
+          path: |
+            app/src/main/assets/bundle/dsh-runtime.bin
+            build/runtime-manifest.json
+          retention-days: 30
+          if-no-files-found: error

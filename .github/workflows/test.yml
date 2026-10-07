@@ -1,20 +1,38 @@
-# 回归测试：跑 dsh-mobile 的全部 node 测试套件。
+# 回归测试 + APK 构建。
 #
 # ── 为什么现在才有 CI ────────────────────────────────────────────────────────
-# 本仓库原先没有任何 CI，测试一直在本机跑。本机没有硬上限，容易出现
-# 「改完顺手跑一下，忘了跑全套」—— 而这次做流式中转时就真的漏了
-# test:link-copies（分发副本没同步），是 sync 之后才补跑才发现的。
-# 放进 CI 之后，漏跑不再依赖记性。
+# 本仓库原先没有任何 CI，测试一直在本机跑。本机没有硬上限，容易「改完顺手跑一下、
+# 忘了跑全套」—— 这次做流式中转就真的漏了 test:link-copies（分发副本没同步），
+# 是 sync 之后才补跑才发现的。放进 CI 之后，漏跑不再依赖记性。
+#
+# ── ⚠️ 为什么这里不 checkout dsh-desktop ─────────────────────────────────────
+# apk-build 需要 dsh-desktop/resources/dsh-runtime（461MB / 26496 文件），
+# 三个脚本也都默认去找本机路径 D:/code/dsh-desktop。两种 checkout 写法都试过，
+# 都不行：
+#
+#   ① path 放在工作区内 → 第二个 checkout 会先 "Deleting the contents of
+#      <workspace>"，把前一个 checkout 出来的 dsh-mobile 自己一起删掉；
+#   ② path 指向工作区外 → checkout 直接拒绝：
+#      "Repository path '…\dsh-mobile\dsh-desktop' is not under '…\dsh-mobile'"。
+#
+# checkout 的 path 本来就设计成「工作区内的子目录」，不是任意路径。
+# 所以改成：**运行时作为 artifact 传进来**，CI 不碰 dsh-desktop 仓库。
+#
+# 代价：test:link-copies 校验的 dsh-desktop 分发副本在这条流水线里拿不到，
+# 该项自动跳过（脚本对找不到仓库有守卫）。不致命 —— copies 的**主要**作用
+# （规范源 ↔ 两份插件副本逐字节一致）仍被覆盖，那份分发副本由开发者机器上的
+# sync-desktop-plugin.mjs 同步。
+#
+# ── 运行时 artifact 从哪来 ────────────────────────────────────────────────────
+# 手动：本地跑 npm run pack:runtime，然后
+#   gh workflow run runtime-pack.yml
+# 或直接用本地已有的 app/src/main/assets/bundle/dsh-runtime.bin（43.9MB）。
+# 由 runtime-pack.yml 负责上传，apk-build 负责下载 —— 两者分离是为了
+# 「运行时没变就别重跑 44MB 的传输」。
 #
 # ── 跑什么 ────────────────────────────────────────────────────────────────────
-# 直接跑 `npm run test:all`，不逐个列举 —— 少写一个套件名就等于少跑一个测试，
-# 而这种遗漏在 CI 上表现为「它一直是绿的」，比红更危险。
-# 套件清单只有一个来源：package.json。
-#
-# ── 为什么先 sync 再测 ───────────────────────────────────────────────────────
-# test:link-copies 会逐字节校验「规范源 ↔ 分发副本 ↔ 已安装目录」三处一致。
-# 不先 sync 就测，改了规范源必然红 —— 但那是「没同步」的正常状态，不是缺陷。
-# 所以顺序固定为：pack（可选）→ sync → test。
+# 直接跑 npm run test:all，不逐个列举 —— 少写一个套件名就等于少跑一个测试，
+# 而这种遗漏在 CI 上表现为「它一直是绿的」，比红更危险。清单只有一个来源。
 name: test
 
 on:
@@ -34,44 +52,15 @@ defaults:
   run:
     shell: bash
 
-env:
-  # 三个脚本默认找**本机路径** D:/code/dsh-desktop，CI 上不存在。显式指到上面
-  # checkout 出来的目录，否则 sync/copies 会「路径不存在」或 worse —— 静默跳过
-  # 校验，看起来是绿的。
-  #
-  # ⚠️ 落位必须在工作区**之外**（${{ github.workspace }}\..\dsh-desktop）：
-  #    actions/checkout 带 path 参数时会先「Deleting the contents of
-  #    <workspace>」再 checkout —— 也就是把**前一次 checkout 的成果整个删掉**。
-  #    放到工作区内部时，dsh-mobile 自己刚 checkout 出来就没了，
-  #    后续步骤在一个半残的目录里跑，报错却是「找不到运行时源」这种
-  #    完全指不到根因的地方。
-  DSH_DESKTOP_REPO: ${{ github.workspace }}\..\dsh-desktop
-
 jobs:
   node-tests:
-    # windows-latest 与桌面仓库一致；这里没有平台相关逻辑，
+    # windows-2022 与桌面仓库一致；这里没有平台相关逻辑，
     # 但保持同一 runner 能让「两仓库的失败原因可比」。
     runs-on: windows-2022
     timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: 拉 dsh-desktop（分发副本与运行时来源）
-        uses: actions/checkout@v4
-        with:
-          # ⚠️ 必须显式拉这个仓库。三个脚本默认去找**本机路径** D:/code/dsh-desktop：
-          #    · sync-desktop-plugin.mjs 要把插件分发副本写进 dsh-desktop 仓库；
-          #    · test:link-copies 要逐字节校验那份分发副本；
-          #    · pack-runtime.mjs 从 dsh-desktop/resources/dsh-runtime 取运行时。
-          # 不拉的后果：前两个要么报错、要么**静默跳过校验**（看起来是绿的，
-          # 实际根本没测）；第三个直接失败。
-          #
-          # path 必须在工作区之外 —— 带 path 的 checkout 会先删掉工作区内容
-          # （日志里就是 "Deleting the contents of ..."），放在工作区内会
-          # 把前一次 checkout 的成果连同 dsh-mobile 自身一起删掉。
-          repository: XRC111/dsh-desktop
-          path: ${{ github.workspace }}/../dsh-desktop
 
       # ⚠️ 不设 cache: 'npm'，不跑 npm ci：这个仓库 dependencies 与
       #    devDependencies 都是空的，也没有 package-lock.json。
@@ -80,13 +69,11 @@ jobs:
         with:
           node-version: '24'
 
-      - name: 同步协议副本到两端插件
-        run: |
-          # ⚠️ 必须在测试**之前**跑：test:link-copies 校验三处副本逐字节一致。
-          #    不同步的话它必然红，而那是「还没同步」而非「有缺陷」——
-          #    两者的区别很重要，混在一起会让人养成「看见 copies 红就忽略」的习惯。
-          node scripts/sync-link-protocol.mjs
-          node scripts/sync-desktop-plugin.mjs
+      - name: 同步协议副本
+        # ⚠️ 必须在测试**之前**跑：test:link-copies 校验副本逐字节一致。
+        #    不同步的话它必然红，而那是「没同步」而非「有缺陷」——
+        #    混成同一个红会让人养成「看见 copies 红就忽略」的习惯。
+        run: node scripts/sync-link-protocol.mjs
 
       - name: 跑全部测试
         run: npm run test:all
@@ -100,15 +87,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 同 node-tests：pack-runtime 从 dsh-desktop/resources/dsh-runtime 取运行时，
-      # 那是本机路径，CI 上必须显式拉。
-      - name: 拉 dsh-desktop（运行时来源）
-        uses: actions/checkout@v4
-        with:
-          # 同 node-tests：必须 checkout 到工作区之外，否则会清空工作区。
-          repository: XRC111/dsh-desktop
-          path: ${{ github.workspace }}/../dsh-desktop
-
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -118,12 +96,36 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: 打包运行时
+      - name: 取运行时
+        uses: actions/download-artifact@v4
+        with:
+          # 找不到时不报错而是接着跑：仓库里可能已有一份（虽然 .gitignore 排除了
+          # dsh-runtime.bin，但开发机上往往已经打好）。让 build 自己报缺什么，
+          # 比在这里报「artifact 不存在」更容易懂。
+          name: dsh-runtime
+          path: runtime-artifact
+          merge-multiple: true
+
+      - name: 落位运行时
         run: |
-          # ⚠️ 这一步**必须**在 build:apk 之前。之前踩过：直接跑 gradlew
-          #    assembleDebug 出来的 APK 里 plugins 的 JS 是旧的（assets 里那份
-          #    指纹没变就不重拷），表现是「代码改了、功能没变」。
-          npm run pack:runtime
+          # artifact 里是 pack:runtime 的产物（dsh-runtime.bin + manifest），
+          # 直接放到 assets/bundle/ —— 也就是 build:apk 会读的位置。
+          # 不走 pack:runtime：它需要 dsh-desktop 那 461MB 源码树来重新打包，
+          # 而运行时本身没变时重新打包毫无意义（tar 字节级一致却要花几分钟）。
+          $src = 'runtime-artifact'
+          $dst = 'app/src/main/assets/bundle'
+          if (-not (Test-Path "$src/dsh-runtime.bin")) {
+            Write-Host "artifact 里没有 dsh-runtime.bin，实际内容："
+            Get-ChildItem $src -Recurse -File | Select-Object -First 10 FullName
+            exit 1
+          }
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item "$src/*" $dst -Force
+          Write-Host ("运行时已落位：{0:N1} MB" -f ((Get-Item "$dst/dsh-runtime.bin").Length / 1MB))
+          if (Test-Path "$src/runtime-manifest.json") {
+            New-Item -ItemType Directory -Force -Path 'build' | Out-Null
+            Copy-Item "$src/runtime-manifest.json" 'build/' -Force
+          }
 
       - name: 构建 APK（debug）
         run: npm run build:apk
