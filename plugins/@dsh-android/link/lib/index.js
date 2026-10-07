@@ -33,7 +33,8 @@ import { TRANSIT_METHOD, TRANSIT_STREAM_METHOD } from './link-protocol/protocol.
 import { MOBILE_METHODS, DEFAULT_PORT, fileChunks } from './link-protocol/protocol.js';
 import { open } from './link-protocol/secret.js';
 import { registerRoutes } from './link-protocol/routes.js';
-import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_POLICY, RELAY_ADVERTISED, LIST_METHOD, LIST_ADVERTISED, relayStream } from './link-protocol/llmrelay.js';
+import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_POLICY, RELAY_ADVERTISED, LIST_METHOD, LIST_ADVERTISED, relayStream, safeProviders, safeModels } from './link-protocol/llmrelay.js';
+import { executeLocally } from './link-protocol/relayexec.js';
 import { loadOrCreateIdentity, TOPOLOGY } from './link-protocol/mesh-identity.js';
 import { Registry } from './link-protocol/mesh-registry.js';
 import { LinkManager, shouldDial } from './link-protocol/mesh-manager.js';
@@ -127,7 +128,27 @@ function apply(ctx, config = {}) {
      * 中转方，但 mesh 下可能成为，所以能力一并宣告 —— 用不用由调用方按当前
      * 连接情况决定。
      */
-    const MOBILE_CAPS = [...MOBILE_METHODS, 'file.push', TRANSIT_METHOD];
+    const MOBILE_CAPS = [
+        ...MOBILE_METHODS,
+        'file.push',
+        TRANSIT_METHOD,
+        // ⚠️⚠️ 这两个是**手机作为模型调用方**的能力，必须宣告 —— 漏了它
+        //    「手机 → 电脑」「手机 → 手机」两个方向全部断掉，而且**完全静默**。
+        //
+        //    实测症状：桌面 registry.json 里记录的手机 capabilities 是
+        //      mobile.status, …, file.push, relay.call     ← 没有 llm.relay
+        //    桌面于是不会宣告 llm.relay（它是条件宣告：只有本机有 llm 才宣告，
+        //    但手机连的是**桌面**，桌面看的是**手机宣告了什么**），
+        //    手机这边看不到 llm.list → 预取不进 → 列表空着。
+        //    两边互相等对方宣告，闭合成空转，界面上看不出任何异常。
+        //
+        //    为什么之前漏：写「反向转发」（手机主动发起）时把 llm.relay 当成了
+        //    「本机挂 llm 服务才有」的桌面专属能力 —— 其实它是「谁能发起调用」，
+        //    与本机有没有 llm 无关。桌面的条件宣告是**它要代为执行**所以才条件化；
+        //    手机只是发起方，不该跟着条件化。
+        RELAY_ADVERTISED,
+        LIST_ADVERTISED,
+    ];
 
     // ── mesh 核心：我是谁 / 我认识谁 / 现在连上了谁 ──────────────────────────
     //
@@ -257,6 +278,39 @@ function apply(ctx, config = {}) {
         // 中转：本机同时连着两台设备时，代其中一台把调用转到另一台。
         // 手机在 mesh 里也可能扮演这个角色（比如两台手机都连着本机）。
         conn.handle(TRANSIT_METHOD, (a) => mesh.relayCall(a));
+        // ── 作为模型调用方 ──────────────────────────────────────────────────
+        //
+        // ⚠️ 这两个 handler 与上面那句「宣告 RELAY_ADVERTISED / LIST_ADVERTISED」
+        //    是**成对**的：宣告了能力却不注册处理，对端发过来只会得到
+        //    「未提供方法」—— 比不宣告更难排查（能力列表看着是有的）。
+        //
+        //    作用：让「另一台设备请求用**本机**的模型执行」成立 ——
+        //    桌面可以调手机的模型，手机 A 可以调手机 B 的模型。
+        conn.handleStream(RELAY_METHOD, async (args, emit, meta) => {
+            const llm = ctx.get('llm');
+            if (!llm) {
+                const e = new Error('本机没有 llm 服务，无法代为执行。');
+                e.code = 'NO_LOCAL_LLM';
+                throw e;
+            }
+            return executeLocally({ llm }, emit, args, meta);
+        });
+        conn.handle(LIST_METHOD, async ({ provider } = {}) => {
+            const llm = ctx.get('llm');
+            if (!llm) {
+                const e = new Error('本机没有 llm 服务，无法提供模型列表。');
+                e.code = 'NO_LOCAL_LLM';
+                throw e;
+            }
+            const providers = safeProviders(llm);
+            if (provider) return { providers, models: await safeModels(llm, provider) };
+            const models = {};
+            await Promise.all(providers.map(async (p) => {
+                const list = await safeModels(llm, p);
+                if (list.length) models[p] = list;
+            }));
+            return { providers, models };
+        });
         // 桌面往手机推文件：落到手机工作区（DSH 的默认 workspace）。
         conn.handle('file.push', async ({ name, chunks, to } = {}) => {
             const base = to

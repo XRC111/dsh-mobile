@@ -115,6 +115,49 @@ export const REMOTE_PROVIDER_LABEL = '经另一台设备调用';
 export const RELAY_TRACE_PREFIX = 'llm-relay';
 
 /**
+ * 取本机 provider 名列表（跨端应答 llm.list 用）。
+ *
+ * ⚠️ 只回**名字**，不回配置或凭据 —— 对端拿到的是「这台机器有哪几个 provider」，
+ *   而不是「怎么登录它们」。凭据留在本机，与 llm.relay 的原则一致。
+ *
+ * @param {object} llm 本机 llm 服务。
+ * @returns {string[]} provider 名列表。
+ */
+export function safeProviders(llm) {
+    try {
+        return llm.listProviders().map((p) => p?.id ?? p?.name ?? String(p));
+    } catch (e) {
+        // listProviders 是同步读内存，理论上不会失败；真失败也不该让整个应答崩。
+        return [];
+    }
+}
+
+/**
+ * 取某个 provider 的模型列表，失败时返回空数组。
+ *
+ * ⚠️ **必须容错**：某个 provider 没配好（缺 key、登录态过期）时 listModels 会
+ *   抛错。让它冒泡出去的结果是「对方的模型一个都看不到」—— 而实际只是少了
+ *   一个 provider。前者让人以为功能坏了，后者才是真相。
+ *
+ * @param {object} llm 本机 llm 服务。
+ * @param {string} provider provider 名。
+ * @returns {Promise<Array<{id: string, name: string}>>}
+ */
+export async function safeModels(llm, provider) {
+    try {
+        const list = await llm.listModels(provider);
+        if (!Array.isArray(list)) return [];
+        // 只保留渲染需要的字段：完整对象可能含配置或凭据相关的字段，
+        // 跨端传没必要也不该传。
+        return list.map((m) =>
+            typeof m === 'string' ? { id: m, name: m } : { id: m?.id, name: m?.name ?? m?.id },
+        );
+    } catch {
+        return [];
+    }
+}
+
+/**
  * 把请求转发到对端，并把对端产生的 chunk 逐块交回本地消费方。
  *
  * waterfall 的监听器必须返回 AsyncIterable<StreamChunk>，所以这里把

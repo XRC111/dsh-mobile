@@ -136,23 +136,69 @@ test('代码里引用的模块级常量都导入了吗', () => {
     assert.deepEqual(problems, [], '未导入的引用：\n  ' + problems.join('\n  '));
 });
 
-test('两端插件都从同一个规范源导入了 llmrelay 的同名常量', () => {
-    // llmrelay.js 的导出清单（协议常量，两端必须一致 ——
-    // 一端漏导入的表现是「那个功能永远不触发」，静默）。
-    const REQUIRED = [
-        'RELAY_METHOD', 'RELAY_ADVERTISED', 'RELAY_POLICY',
-        'REMOTE_PROVIDER', 'REMOTE_PROVIDER_LABEL',
-        'LIST_METHOD', 'LIST_ADVERTISED',
+test('两端都宣告 llm.relay / llm.list（缺一边 = 双向静默失效）', () => {
+    // ⚠️⚠️ 这个断言来自一次真实故障，症状与「功能没做」一模一样：
+    //
+    //   桌面侧 registry.json 里记录的手机 capabilities 是
+    //     mobile.status, …, file.push, relay.call        ← 没有 llm.relay
+    //   而桌面自己的 advertisedMethods() 是**条件**宣告（只有本机挂了 llm 才宣告
+    //   llm.relay / llm.list）。于是两边互相等对方宣告：
+    //     · 手机看不到 llm.list → 不预取 → 模型列表空着
+    //     · 桌面看不到 llm.relay → 不宣告 → 手机发来的转发请求被拒
+    //   闭合成空转，**界面上看不出任何异常**，只会觉得「这功能没做」。
+    //
+    // 为什么会漏：写「反向转发」时把 llm.relay 当成了「本机挂 llm 才有」的
+    // 桌面专属能力。其实它是「**谁能发起调用**」，与本机有没有 llm 无关 ——
+    // 桌面的条件化是因为它要**代为执行**，手机只是发起方，不该跟着条件化。
+    const mobile = fs.readFileSync(
+        path.join(ROOT, 'plugins/@dsh-android/link/lib/index.js'), 'utf8');
+    const desktop = fs.readFileSync(
+        path.join(ROOT, 'desktop-plugins/@dsh-desktop/link/lib/index.js'), 'utf8');
+
+    const problems = [];
+    // 手机：无条件宣告
+    const capsMatch = mobile.match(/const MOBILE_CAPS\s*=\s*\[([\s\S]*?)\];/);
+    if (!capsMatch) {
+        problems.push('找不到 MOBILE_CAPS 定义');
+    } else {
+        for (const name of ['RELAY_ADVERTISED', 'LIST_ADVERTISED']) {
+            if (!capsMatch[1].includes(name)) {
+                problems.push(`手机 MOBILE_CAPS 里没有 ${name}`);
+            }
+        }
+    }
+    // 桌面：条件宣告（已有，这里防回归）
+    if (!desktop.includes('RELAY_ADVERTISED, LIST_ADVERTISED')) {
+        problems.push('桌面 advertisedMethods 没有同时宣告两个');
+    }
+    assert.deepEqual(problems, [], problems.join('\n'));
+});
+
+test('宣告的能力必须有对应的 handler（宣告了却没实现更难排查）', () => {
+    // 对端看到能力列表里有它就会发过来；没有 handler 就得到「未提供方法」——
+    // 比不宣告更难查（能力列表看着是齐的，实际全不可用）。
+    const files = [
+        ['手机', 'plugins/@dsh-android/link/lib/index.js'],
+        ['桌面', 'desktop-plugins/@dsh-desktop/link/lib/index.js'],
     ];
     const problems = [];
-    for (const rel of [
-        'plugins/@dsh-android/link/lib/index.js',
-        'desktop-plugins/@dsh-desktop/link/lib/index.js',
-    ]) {
+    for (const [side, rel] of files) {
         const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-        const imported = importedNames(src);
-        const missing = REQUIRED.filter((n) => !imported.has(n));
-        if (missing.length) problems.push(`${rel} 缺: ${missing.join(', ')}`);
+        for (const [constName, methodConst] of [
+            ['RELAY_ADVERTISED', 'RELAY_METHOD'],
+            ['LIST_ADVERTISED', 'LIST_METHOD'],
+        ]) {
+            // 宣告了？
+            const advertised = new RegExp(`${constName}\\b`).test(
+                src.match(/const (MOBILE|DESKTOP)_CAPS|advertisedMethods[\s\S]{0,300}/)?.[0] ?? '',
+            );
+            if (!advertised) continue;
+            // 有 handler？
+            const hasHandler = new RegExp(`conn\\.handle(Stream)?\\(\\s*${methodConst}\\b`).test(src);
+            if (!hasHandler) {
+                problems.push(`${side}: 宣告了 ${constName}，但没有 conn.handle*(${methodConst})`);
+            }
+        }
     }
     assert.deepEqual(problems, [], problems.join('\n'));
 });
