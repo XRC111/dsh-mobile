@@ -1,0 +1,51 @@
+# ── 行尾约定：仓库内一律 LF，检出时不做转换 ────────────────────────────────────
+#
+# ⚠️ 为什么必须写在这里，而不是在 CI 里转换 ─────────────────────────────────────
+# Windows runner 的 git 默认 core.autocrlf=true，checkout 时会把 LF 转成 CRLF。
+# 对普通文本文件这只是风格差异，但对**逐字节匹配的字符串锚点**是致命的：
+#
+#   app/src/main/assets/bundle/pnpm-lite.mjs 里的 DSMARKET_PATCHES 用
+#   '\n' 拼锚点字符串，去打 dshmarket 的 lib/dsh-cli.js。而那个文件 checkout
+#   出来也是 CRLF，于是每个锚点都少命中一行 —— 表现为「补丁静默失效，
+#   装插件回到 EACCES」，而日志里一条错误都没有。
+#
+# 这个坑很难自查：开发机若本来就是 LF（或 core.autocrlf=false）就完全看不出来，
+# 只有 CI 上才炸。所以约束必须落在仓库里，让所有平台一致。
+#
+# -text  = 二进制，禁止任何转换（.so/.apk/.jar 等）
+# text eol=lf = 按文本处理，仓库与工作区都用 LF
+
+* text=auto eol=lf
+
+# 二进制资源：禁止行尾转换，否则内容被改、指纹校验失败
+*.so      -text
+*.dll     -text
+*.node    -text
+*.apk     -text
+*.aab     -text
+*.jar     -text
+*.bin     -text
+*.tar     -text
+*.tar.gz  -text
+*.zip     -text
+*.png     -text
+*.jpg     -text
+*.ico     -text
+*.keystore -text
+
+# 明确列出最容易被 CRLF 咬的文本资产（锚点逐字节匹配）
+app/src/main/assets/bundle/pnpm-lite.mjs      text eol=lf
+app/src/main/assets/nodejs-project/*.cjs      text eol=lf
+scripts/fixtures/*.js                          text eol=lf
+
+# Gradle / Android 侧保持惯例（Gradle 脚本在 Windows 上用 CRLF 也无妨，
+# 但统一成 LF 能避免整个文件在 diff 里全红）
+*.kt        text eol=lf
+*.kts       text eol=lf
+*.gradle    text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+*.mjs       text eol=lf
+*.js        text eol=lf
+*.json      text eol=lf
