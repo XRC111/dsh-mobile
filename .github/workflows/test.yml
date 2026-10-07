@@ -37,8 +37,15 @@ defaults:
 env:
   # 三个脚本默认找**本机路径** D:/code/dsh-desktop，CI 上不存在。显式指到上面
   # checkout 出来的目录，否则 sync/copies 会「路径不存在」或 worse —— 静默跳过
-  # 校验，看起来是绿的。path 是相对工作区的，与 checkout 的 path 参数一致。
-  DSH_DESKTOP_REPO: ${{ github.workspace }}\dsh-desktop
+  # 校验，看起来是绿的。
+  #
+  # ⚠️ 落位必须在工作区**之外**（${{ github.workspace }}\..\dsh-desktop）：
+  #    actions/checkout 带 path 参数时会先「Deleting the contents of
+  #    <workspace>」再 checkout —— 也就是把**前一次 checkout 的成果整个删掉**。
+  #    放到工作区内部时，dsh-mobile 自己刚 checkout 出来就没了，
+  #    后续步骤在一个半残的目录里跑，报错却是「找不到运行时源」这种
+  #    完全指不到根因的地方。
+  DSH_DESKTOP_REPO: ${{ github.workspace }}\..\dsh-desktop
 
 jobs:
   node-tests:
@@ -59,8 +66,12 @@ jobs:
           #    · pack-runtime.mjs 从 dsh-desktop/resources/dsh-runtime 取运行时。
           # 不拉的后果：前两个要么报错、要么**静默跳过校验**（看起来是绿的，
           # 实际根本没测）；第三个直接失败。
+          #
+          # path 必须在工作区之外 —— 带 path 的 checkout 会先删掉工作区内容
+          # （日志里就是 "Deleting the contents of ..."），放在工作区内会
+          # 把前一次 checkout 的成果连同 dsh-mobile 自身一起删掉。
           repository: XRC111/dsh-desktop
-          path: dsh-desktop
+          path: ${{ github.workspace }}/../dsh-desktop
 
       # ⚠️ 不设 cache: 'npm'，不跑 npm ci：这个仓库 dependencies 与
       #    devDependencies 都是空的，也没有 package-lock.json。
@@ -94,8 +105,9 @@ jobs:
       - name: 拉 dsh-desktop（运行时来源）
         uses: actions/checkout@v4
         with:
+          # 同 node-tests：必须 checkout 到工作区之外，否则会清空工作区。
           repository: XRC111/dsh-desktop
-          path: dsh-desktop
+          path: ${{ github.workspace }}/../dsh-desktop
 
       - uses: actions/setup-node@v4
         with:
