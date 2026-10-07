@@ -409,8 +409,11 @@ private fun LinkConnectDialog(
     var host by remember { mutableStateOf(init.host) }
     var port by remember { mutableStateOf(init.port.toString()) }
     var code by remember { mutableStateOf("") }
-    // 0 = 直连，1 = 端口转发
-    var modeIndex by remember { mutableStateOf(if (init.mode == "forward") 1 else 0) }
+    // 0 = 直连，1 = 端口转发，2 = 经内嵌组网
+    var modeIndex by remember { mutableStateOf(if (init.mode == "forward") 1 else if (init.mode == "overlay") 2 else 0) }
+    // 组网专用参数：桌面的组网端口 + 桌面的虚拟 IP。
+    var etPeerPort by remember { mutableStateOf("11010") }
+    var etDstIp by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
     SuperDialog(
@@ -423,7 +426,15 @@ private fun LinkConnectDialog(
             SuperSpinner(
                 items = listOf(
                     SpinnerEntry(title = "直连", summary = "填桌面的真实地址：局域网 IP、公网 IPv6，或组网工具的虚拟 IP。"),
-                    SpinnerEntry(title = "端口转发", summary = "已用 EasyTier/ssh 把桌面端口映射到本机时选这个，地址填 127.0.0.1。"),
+                    SpinnerEntry(
+                        title = "端口转发",
+                        summary = "已用 ssh 等工具把桌面端口映射到本机时选这个，地址填 127.0.0.1。",
+                    ),
+                    SpinnerEntry(
+                        title = "经内嵌组网（推荐）",
+                        summary = "与桌面不在同一网络时用这个。应用内置了组网引擎，会自动把桌面端口映射到 " +
+                            "127.0.0.1 —— 不用另装 App，也不需要 VPN 权限。",
+                    ),
                 ),
                 selectedIndex = modeIndex,
                 title = "连接方式",
@@ -433,13 +444,41 @@ private fun LinkConnectDialog(
             MiuixTextField(
                 value = host,
                 onValueChange = { host = it; error = null },
-                label = if (modeIndex == 1) "127.0.0.1" else "桌面地址，如 192.168.1.10",
+                // 「经内嵌组网」时桌面地址不是填给 link 的，而是填给组网引擎去
+                // 找桌面的 —— link 那头连的是 127.0.0.1。所以这里改成
+                // 「桌面地址（组网用）」，避免用户以为是 link 的连接地址。
+                label = when (modeIndex) {
+                    1 -> "127.0.0.1"
+                    2 -> "桌面地址（组网用，如 1.2.3.4）"
+                    else -> "桌面地址，如 192.168.1.10"
+                },
             )
+            if (modeIndex == 2) {
+                Spacer(Modifier.height(12.dp))
+                MiuixTextField(
+                    value = etPeerPort,
+                    onValueChange = { etPeerPort = it.filter { c -> c.isDigit() }; error = null },
+                    label = "桌面组网端口（默认 11010）",
+                )
+                Spacer(Modifier.height(12.dp))
+                MiuixTextField(
+                    value = etDstIp,
+                    onValueChange = { etDstIp = it; error = null },
+                    label = "桌面虚拟 IP（如 10.144.0.2）",
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "虚拟 IP 由组网网络决定，两端必须用同一个网络名。桌面侧也要跑组网引擎，" +
+                        "并把虚拟 IP 固定成同一个值 —— 否则这里填的地址对不上。",
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
             Spacer(Modifier.height(12.dp))
             MiuixTextField(
                 value = port,
                 onValueChange = { port = it.filter { c -> c.isDigit() }; error = null },
-                label = "端口（默认 45731）",
+                label = if (modeIndex == 1 || modeIndex == 2) "本机映射端口（默认 45731）" else "端口（默认 45731）",
             )
             Spacer(Modifier.height(12.dp))
             MiuixTextField(
@@ -463,15 +502,36 @@ private fun LinkConnectDialog(
                     // 地址为空是最常见的失误，在这里挡住并给出提示，
                     // 而不是发一个必然失败的请求。
                     if (host.isBlank()) {
-                        error = "请填桌面地址"
+                        error = if (modeIndex == 2) "请填桌面地址（组网用）" else "请填桌面地址"
                         return@Button
                     }
+                    // 组网模式必须知道桌面的虚拟 IP —— 端口转发规则要指向它，
+                    // 缺了就没法组装配置。与其发一个必然失败的请求，不如在这里说清。
+                    if (modeIndex == 2 && etDstIp.isBlank()) {
+                        error = "请填桌面虚拟 IP（端口转发要指向它）"
+                        return@Button
+                    }
+                    val useOverlay = modeIndex == 2
                     onClose()
                     actions.onLinkConnect(
-                        host.trim(),
+                        // 组网模式下 link 连的是**本机**映射端口，不是桌面地址。
+                        // 桌面地址是给组网引擎用的，由 onLinkConnect 内部转交。
+                        if (useOverlay) "127.0.0.1" else host.trim(),
                         port.toIntOrNull() ?: 45731,
                         code.trim(),
-                        if (modeIndex == 1) "forward" else "direct",
+                        when (modeIndex) {
+                            1 -> "forward"
+                            2 -> "overlay"
+                            else -> "direct"
+                        },
+                        // 组网参数（其余模式为 null）
+                        if (useOverlay) {
+                            OverlayParams(
+                                desktopHost = host.trim(),
+                                desktopPeerPort = etPeerPort.toIntOrNull() ?: 11010,
+                                desktopVirtualIp = etDstIp.trim(),
+                            )
+                        } else null,
                     )
                 },
                 colors = primaryButtonColors(),

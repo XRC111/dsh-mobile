@@ -23,6 +23,8 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import com.dshdesktop.android.easytier.EasyTierOverlay
+import com.dshdesktop.android.easytier.OverlayConfig
 import org.json.JSONObject
 import android.widget.ProgressBar
 import android.widget.ScrollView
@@ -189,7 +191,9 @@ class MainActivity : AppCompatActivity() {
                             onRestart = { restartApp() },
                             onShowLogs = { activeDialog.value = ShellDialog.LogPaths },
                             onPickLinkConnect = { promptLinkConnect() },
-                            onLinkConnect = { host, port, code, mode -> linkConnect(host, port, code, mode) },
+                            onLinkConnect = { host, port, code, mode, overlay ->
+                                linkConnect(host, port, code, mode, overlay)
+                            },
                             onLinkDisconnect = { linkDisconnect() },
                             onToggleLlmRelay = { enable -> toggleLlmRelay(enable) },
                             // ⚠️ 这些 lambda 里不能直接写 `this`：它们位于
@@ -401,12 +405,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** 真正发起配对（后台线程）。 */
-    private fun linkConnect(host: String, port: Int, code: String, mode: String) {
+    private fun linkConnect(
+        host: String,
+        port: Int,
+        code: String,
+        mode: String,
+        overlay: OverlayParams?,
+    ) {
         val url = NodeState.state.value.url
         linkSnapshot.value = LinkSnapshot(savedHost = host, savedPort = port, mode = mode)
         pushShellState(NodeState.state.value)
         Thread {
             val snap = try {
+                // ⚠️ 组网**必须**先起，link 再连。
+                //
+                // 顺序反了的话：link 去连 127.0.0.1:<映射端口>，而那个端口
+                // 正由组网引擎监听 —— 它没起来就是 ECONNREFUSED，而这个报错
+                // 完全看不出「其实要先组网」，会被当成「桌面对不上/没开机」。
+                if (overlay != null) {
+                    startOverlay(overlay, port)
+                }
                 val body = JSONObject().apply {
                     put("host", host)
                     put("port", port)
@@ -431,6 +449,27 @@ class MainActivity : AppCompatActivity() {
                 if (snap.error == null && snap.connected) toast("已连接：" + snap.desktopName)
             }
         }.start()
+    }
+
+    /**
+     * 启动内嵌组网。
+     *
+     * @throws IllegalStateException 配置非法或启动失败 —— 消息里带上原因，
+     *         因为这是**同步**抛出的，界面会把它显示在错误位上。
+     */
+    private fun startOverlay(p: OverlayParams, bindPort: Int) {
+        val peerUri = "tcp://${p.desktopHost}:${p.desktopPeerPort}"
+        val dstAddr = "${p.desktopVirtualIp}:45731"
+        EasyTierOverlay.start(
+            context = this,
+            // 网络名/密钥两端必须一致。先用一组默认值 ——
+            // 桌面侧若用不同值，隧道建不起来，表现为连不上而非配置错。
+            networkName = OverlayConfig.NETWORK_NAME,
+            networkSecret = OverlayConfig.NETWORK_SECRET,
+            peerUri = peerUri,
+            bindPort = bindPort,
+            dstAddr = dstAddr,
+        )
     }
 
     /** 断开（保留令牌，下次可直接重连）。 */

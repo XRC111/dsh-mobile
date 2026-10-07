@@ -110,6 +110,23 @@ data class LinkSnapshot(
  *    由 [ShellDialogHost] 渲染。这样「点一下」与「弹什么」分开，界面层不需要认识
  *    AlertDialog，也不会出现「弹了两个框」或「框关了状态还在」这类不一致。
  */
+/**
+ * 「经内嵌组网」模式的参数。
+ *
+ * 与 host/port 分开的原因：那些是给 **link 协议**用的（连 127.0.0.1 的映射
+ * 端口），而这三个是给**组网引擎**用的（去哪儿找桌面）。两者描述的是不同的
+ * 连接，混在一个数据结构里会让人以为「填了桌面地址就是 link 的目标」。
+ *
+ * @param desktopHost 桌面的真实地址（组网引擎靠它建立 overlay）。
+ * @param desktopPeerPort 桌面的组网监听端口（默认 11010）。
+ * @param desktopVirtualIp 桌面在虚拟网里的地址，端口转发要指向它。
+ */
+data class OverlayParams(
+    val desktopHost: String,
+    val desktopPeerPort: Int,
+    val desktopVirtualIp: String,
+)
+
 data class ShellActions(
     val onEnter: () -> Unit,
     val onPickWorkspace: () -> Unit,
@@ -119,7 +136,7 @@ data class ShellActions(
     val onRestart: () -> Unit,
     val onShowLogs: () -> Unit,
     /** 发起配对（参数已由对话框收集好）。 */
-    val onLinkConnect: (host: String, port: Int, code: String, mode: String) -> Unit,
+    val onLinkConnect: (host: String, port: Int, code: String, mode: String, overlay: OverlayParams?) -> Unit,
     /** 打开配对对话框（MainActivity 负责把上次填的地址塞进 dialog 状态）。 */
     val onPickLinkConnect: () -> Unit,
     val onLinkDisconnect: () -> Unit,
