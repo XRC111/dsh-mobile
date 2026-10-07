@@ -20,6 +20,8 @@
     "test:link-mesh-integration": "node scripts/link-mesh-integration.test.mjs",
     "test:link-mesh-driver": "node scripts/link-mesh-driver.test.mjs",
     "test:link-relay": "node scripts/link-relay.test.mjs",
+    "test:link-imports": "node scripts/link-imports.test.mjs",
+    "test:easytier": "node scripts/easytier-desktop.test.mjs",
     "test:link-stream-relay": "node scripts/link-stream-relay.test.mjs",
     "test:link-contract": "node scripts/link-contract.test.mjs",
     "audit:native": "node scripts/audit-native.mjs",
@@ -29,6 +31,6 @@
     "install:desktop-link": "node scripts/install-desktop-link.mjs",
     "fetch:addon": "node scripts/fetch-addon.mjs",
     "test:link-stream": "node packages/dsh-link-protocol/test/stream.test.mjs",
-    "test:all": "npm run test:link && npm run test:link-netinfo && npm run test:link-integration && npm run test:link-copies && npm run test:link-stream && npm run test:link-mesh && npm run test:link-mesh-integration && npm run test:link-mesh-driver && npm run test:link-relay && npm run test:link-stream-relay && npm run test:link-contract && npm run test:pnpm-shim"
+    "test:all": "npm run test:link && npm run test:link-netinfo && npm run test:link-integration && npm run test:link-copies && npm run test:link-stream && npm run test:link-mesh && npm run test:link-mesh-integration && npm run test:link-mesh-driver && npm run test:link-relay && npm run test:link-stream-relay && npm run test:link-imports && npm run test:easytier && npm run test:link-contract && npm run test:pnpm-shim"
   }
 }

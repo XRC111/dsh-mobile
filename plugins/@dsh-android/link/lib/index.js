@@ -33,7 +33,7 @@ import { TRANSIT_METHOD, TRANSIT_STREAM_METHOD } from './link-protocol/protocol.
 import { MOBILE_METHODS, DEFAULT_PORT, fileChunks } from './link-protocol/protocol.js';
 import { open } from './link-protocol/secret.js';
 import { registerRoutes } from './link-protocol/routes.js';
-import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_POLICY, RELAY_ADVERTISED, relayStream } from './link-protocol/llmrelay.js';
+import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_POLICY, RELAY_ADVERTISED, LIST_METHOD, LIST_ADVERTISED, relayStream } from './link-protocol/llmrelay.js';
 import { loadOrCreateIdentity, TOPOLOGY } from './link-protocol/mesh-identity.js';
 import { Registry } from './link-protocol/mesh-registry.js';
 import { LinkManager, shouldDial } from './link-protocol/mesh-manager.js';
