@@ -3,7 +3,12 @@
  * 打包 dsh 运行时为 APK assets 用的 tar.gz。
  *
  * 源：  dsh-desktop 仓库的 resources/dsh-runtime（win32 平台 npm install 的产物）。
- *      位置用 DSH_DESKTOP_RUNTIME 覆盖，默认 <DSH_DESKTOP>/resources/dsh-runtime。
+ *      位置覆盖变量（按优先级）：DSH_RUNTIME_SRC（直接指到 dsh-runtime 目录）
+ *      > DSH_DESKTOP_REPO / DSH_DESKTOP（指到 dsh-desktop 仓库根）
+ *      > 本机默认 D:/code/dsh-desktop。
+ *      ⚠️ 后两个名字**都要认**：另两个脚本（sync-desktop-plugin、link-protocol-copies）
+ *         读的是 DSH_DESKTOP_REPO，只设那一个会让本脚本找不到源，且报错完全
+ *         看不出是变量名不一致。
  * 产物：app/src/main/assets/bundle/dsh-runtime.bin + build/runtime-manifest.json
  *
  * ⚠️ 文件名必须是 .bin：AAPT2 会把 assets 里 .gz 后缀的文件解压存储并去掉
@@ -33,7 +38,16 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 // ⚠️ 不能写死作者机器上的路径 —— 别人 clone 下来必须能改。
 //    优先级：环境变量 DSH_RUNTIME_SRC > DSH_DESKTOP/resources/dsh-runtime > 报错提示。
 const SRC = process.env.DSH_RUNTIME_SRC
-    ?? path.join(process.env.DSH_DESKTOP ?? 'D:/code/dsh-desktop', 'resources', 'dsh-runtime');
+    ?? path.join(
+        // ⚠️ 这里原来只读 DSH_DESKTOP，而 sync-desktop-plugin.mjs 与
+        //    link-protocol-copies.test.mjs 读的是 DSH_DESKTOP_REPO。
+        //    同一次 CI 里设了 DSH_DESKTOP_REPO，于是那两个脚本正常、
+        //    只有本脚本找不到运行时源，报错指向「找不到 DSH 运行时源：
+        //    D:/code/dsh-desktop/…」—— 完全看不出是变量名不一致。
+        //    现在两个名字都认，后者优先（与另外两个脚本一致）。
+        process.env.DSH_DESKTOP_REPO ?? process.env.DSH_DESKTOP ?? 'D:/code/dsh-desktop',
+        'resources', 'dsh-runtime',
+    );
 const STAGE = path.join(ROOT, 'build', 'runtime-stage');
 const OUT = path.join(ROOT, 'app', 'src', 'main', 'assets', 'bundle', 'dsh-runtime.bin');
 
@@ -280,7 +294,8 @@ async function main() {
     //    在 CI 或别人机器上，runtime 源能按环境变量找到（守卫放行），
     //    却在 require('tar') 这一步因为路径写死而失败 —— 报错指向 tar 而不是
     //    「路径不对」，极难定位。统一走同一个解析结果。
-    const desktopRepo = process.env.DSH_DESKTOP
+    const desktopRepo = process.env.DSH_DESKTOP_REPO
+        ?? process.env.DSH_DESKTOP
         ?? (process.env.DSH_RUNTIME_SRC ? path.dirname(path.dirname(SRC)) : 'D:/code/dsh-desktop');
     const req = createRequire(path.join(desktopRepo, 'package.json'));
     const tar = req('tar');
