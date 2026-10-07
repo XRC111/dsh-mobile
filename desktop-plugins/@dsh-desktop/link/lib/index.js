@@ -37,6 +37,19 @@ import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_ADVERTISED,
 import { executeLocally } from './link-protocol/relayexec.js';
 import { describeAddresses } from './link-protocol/netinfo.js';
 import { loadOrCreateIdentity, TOPOLOGY } from './link-protocol/mesh-identity.js';
+import * as et from './easytier.js';
+
+/**
+ * 组网的默认网络名与密钥。
+ *
+ * ⚠️ 必须与手机侧（com.dshdesktop.android.easytier.OverlayConfig）**完全一致**，
+ *    否则隧道建不起来 —— 而症状只是「连不上」，完全指不到是这里对不上。
+ *
+ * 放在两边各一份字面量（而不是共享一个文件）是有意的：手机是 Kotlin、
+ * 桌面是 JS，跨语言共享常量得不偿失。改的时候两边都要改。
+ */
+const OVERLAY_NETWORK_NAME = 'dsh';
+const OVERLAY_NETWORK_SECRET = 'dsh-link-overlay';
 import { Registry } from './link-protocol/mesh-registry.js';
 import { LinkManager } from './link-protocol/mesh-manager.js';
 
@@ -793,6 +806,14 @@ function apply(ctx, config = {}) {
         return {
             running: Boolean(state.server),
             port: state.server?.port ?? null,
+            // 组网状态并进 status 而不单独查：界面本来就要刷新 status，
+            // 多一个端点就多一处可能不同步。
+            //
+            // available=false 表示「没随安装包带上那个动态库」。**这不等于
+            // 组网不可用** —— 手机连进来依然能通过 mesh 直连，只是异地时
+            // 需要用户自己装 EasyTier。所以界面必须把它显示成「可选」，
+            // 不能显示成「出错」。
+            easytier: easytierStatus(),
             code: state.code && Date.now() <= state.codeExpiresAt ? state.code : null,
             codeExpiresInSeconds: state.code ? Math.max(0, Math.round((state.codeExpiresAt - Date.now()) / 1000)) : 0,
             addresses: lanAddresses().list,
@@ -879,12 +900,103 @@ function apply(ctx, config = {}) {
         };
     }
 
+    /**
+ * 组网状态（供 /status 与诊断页用）。
+ *
+ * ⚠️ available=false 时**不要**当成错误：手机连进来照样能用 mesh 直连，
+ *    异地场景才需要组网。而它 unavailable 的常见原因是「那个动态库没随安装包
+ *    带上」或「系统缺 WinPcap」—— 都是可解释的正常状态，不是故障。
+ */
+function easytierStatus() {
+        try {
+            const s = et.status(pluginRoot());
+            return {
+                available: !!s.available,
+                running: !!s.running,
+                dll: s.dll,
+                peers: s.peers ?? [],
+                // 加载失败的具体原因（缺依赖 vs 符号对不上）—— 两者处置完全不同。
+                error: s.error ?? null,
+                // 缺依赖时的说明：让用户知道该去装什么，而不是看到一个英文报错。
+                hint: !s.available
+                    ? '未随安装包提供该动态库，或系统缺少它的依赖（WinPcap/Npcap）。' +
+                      '不影响直连；只有手机与本机不在同一网络时才需要它。'
+                    : null,
+            };
+        } catch (e) {
+            return { available: false, running: false, error: e.message, hint: null, peers: [] };
+        }
+    }
+
+    /** 插件根目录（用于定位 dll）。 */
+    function pluginRoot() {
+        try {
+            return path.dirname(path.dirname(new URL(import.meta.url).pathname));
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * 启动组网。
+     *
+     * 校验放在这里而不是让 EasyTier 库报错：`network_name` 两端不一致、
+     * 虚拟 IP 填错，这两种情况库只会说「连接失败」，用户完全无从知道
+     * 自己是哪一端填错了。
+     */
+    function opEasyTierStart(body = {}) {
+        const networkName = String(body.networkName || OVERLAY_NETWORK_NAME).trim();
+        const networkSecret = String(body.networkSecret || OVERLAY_NETWORK_SECRET);
+        const peerUri = String(body.peerUri || '').trim();
+        const bindPort = Number(body.bindPort) || 45731;
+        const dstAddr = String(body.dstAddr || '').trim();
+
+        if (!networkName) throw new Error('请填网络名（与手机侧必须一致）。');
+        if (!dstAddr) {
+            throw new Error(
+                '请填手机的虚拟 IP 与端口（如 10.144.0.3:45731）。' +
+                '端口转发要指向它 —— 少了这一项就没有转发规则，组网起来了也连不上。',
+            );
+        }
+        // 粗校验形状即可：真正的解析由库的 parse_config 负责，
+        // 这里只挡「明显不是地址」这种低级失误，省得用户等一次失败才看到。
+        if (!/^\S+:\d+$/.test(dstAddr)) {
+            throw new Error(`「${dstAddr}」不像地址，应为 主机:端口（如 10.144.0.3:45731）。`);
+        }
+        if (peerUri && !/^(tcp|udp|ws|wss|quic):\/\//.test(peerUri)) {
+            throw new Error(`「${peerUri}」缺少协议前缀，应形如 tcp://1.2.3.4:11010。`);
+        }
+
+        const r = et.start({ networkName, networkSecret, peerUri, bindPort, dstAddr });
+        if (!r.ok) throw new Error(r.error);
+        return {
+            ...easytierStatus(),
+            // 回显实际生效的配置：网络名/IP 填错时，用户能靠它与手机侧对照。
+            config: {
+                networkName, bindPort, dstAddr,
+                peerUri: peerUri || null,
+                // 密钥不外传 —— 它是组网网络的通行口令。
+                networkSecret: '（已设置）',
+            },
+            note: '已启动。手机侧选「经内嵌组网」并填相同的网络名与本机地址即可。',
+        };
+    }
+
+    /** 停止组网。 */
+    function opEasyTierStop() {
+        et.stop();
+        return { ...easytierStatus(), note: '已停止。' };
+    }
+
     // GUI 用的 HTTP 路由（挂在已鉴权的 Connection 上，见 routes.js 的说明）。
     registerRoutes(ctx, {
         status: () => opStatus(),
         start: (body) => opStart(body ?? {}),
         stop: () => opStop(),
         code: () => opCode(),
+        easytierStatus: () => opEasyTierStatus(),
+        easytierStart: (body) => opEasyTierStart(body ?? {}),
+        easytierStop: () => opEasyTierStop(),
     });
 
     defineAndRegister();
@@ -915,6 +1027,51 @@ function apply(ctx, config = {}) {
                 description: '停止远程联动服务并断开已配对设备。',
                 parameters: {},
                 async execute() { return opStop(); },
+            },
+            // ── 异地组网 ────────────────────────────────────────────────────────
+            {
+                name: 'link_easytier_status',
+                description:
+                    '查看内嵌组网的状态：动态库是否可用、是否在跑、连上了哪些设备。\n' +
+                    '手机与本机不在同一网络时用它建 overlay 隧道，省得用户自己装 EasyTier 并手填端口转发。',
+                parameters: {},
+                async execute() { return easytierStatus(); },
+            },
+            {
+                name: 'link_easytier_start',
+                description:
+                    '启动内嵌组网，让异地也能连上。启动后把手机侧「连接方式」选成' +
+                    '「经内嵌组网」，填相同的网络名与本机地址即可。\n' +
+                    '不需要 VPN 权限、不需要前台服务、不影响本机其它 App 的网络。',
+                parameters: {
+                    networkName: {
+                        type: 'string',
+                        description: '网络名，两端必须一致（默认 dsh）。',
+                    },
+                    networkSecret: {
+                        type: 'string',
+                        description: '网络密钥，两端必须一致（默认 dsh-link-overlay）。',
+                    },
+                    peerUri: {
+                        type: 'string',
+                        description: '手机的组网地址，形如 tcp://1.2.3.4:11010。留空则等手机来连。',
+                    },
+                    bindPort: {
+                        type: 'number',
+                        description: '本机转发监听端口，默认 45731（与联动端口一致）。',
+                    },
+                    dstAddr: {
+                        type: 'string',
+                        description: '手机虚拟 IP 与端口，如 10.144.0.3:45731。**必填** —— 端口转发要指向它。',
+                    },
+                },
+                async execute(args) { return opEasyTierStart(args ?? {}); },
+            },
+            {
+                name: 'link_easytier_stop',
+                description: '停止内嵌组网（不影响直连与已连设备）。',
+                parameters: {},
+                async execute() { return opEasyTierStop(); },
             },
             // ── 操作手机 ────────────────────────────────────────────────────────
             {

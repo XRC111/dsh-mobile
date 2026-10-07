@@ -45,11 +45,48 @@ const FILES = [
     'lib/link-protocol/netinfo.js',
     'lib/link-protocol/llmrelay.js',
     'lib/link-protocol/relayexec.js',
+    // 内嵌组网的 koffi 绑定。⚠️ 加它时忘了加进 FILES，同步后分发副本里没有 ——
+    //    于是下面 assertNoMissingFiles() 的断言被加进来挡住下一次。
+    'lib/easytier.js',
     // mesh 三件套：桌面侧也要用它做多设备去重与寻址。
     'lib/link-protocol/mesh-identity.js',
     'lib/link-protocol/mesh-registry.js',
     'lib/link-protocol/mesh-manager.js',
 ];
+
+/**
+ * 规范源里实际存在的文件（相对插件根，POSIX 风格）。
+ *
+ * ⚠️ 为什么要同时算这个：`FILES` 是显式清单，而**新增文件忘记加进清单**这件事
+ *    已经发生过一次 —— 加了 lib/easytier.js，同步后分发副本里没有，
+ *    link-protocol-copies.test.mjs 报「分发副本不一致」。
+ *    那个测试是好的（本地就暴露了），但更好的做法是让这类遗漏**不可能发生**。
+ *
+ *    所以：同步完成后会断言「规范源里每个 .js 都在 FILES 里」，有遗漏直接报错。
+ *    这样加文件时会被立刻拦住，而不是等测试失败后再去猜是哪一步漏了。
+ */
+function sourceJsFiles(dir = SOURCE, prefix = '') {
+    const out = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const rel = prefix ? prefix + '/' + entry.name : entry.name;
+        if (entry.isDirectory()) out.push(...sourceJsFiles(path.join(dir, entry.name), rel));
+        else if (entry.name.endsWith('.js')) out.push(rel);
+    }
+    return out;
+}
+
+/** 检查 FILES 是否覆盖了规范源里所有的 .js。 */
+function assertNoMissingFiles() {
+    const listed = new Set(FILES);
+    const missing = sourceJsFiles().filter((f) => !listed.has(f));
+    if (missing.length) {
+        throw new Error(
+            'FILES 清单漏了这些文件（加进 scripts/sync-desktop-plugin.mjs 的 FILES）：\n  ' +
+            missing.join('\n  ') +
+            '\n漏了的后果：分发副本里没有它们，用户点开设置页会白屏。',
+        );
+    }
+}
 
 /**
  * 把规范源的文件复制到目标目录。
@@ -71,6 +108,9 @@ function syncTo(dest) {
 
 // 1) dsh-desktop 仓库（分发源）
 if (fs.existsSync(REPO)) {
+    // 同步前先确认清单没漏文件 —— 漏了的话这��分发副本就是坏的，
+    // 而「分发副本坏掉」在用户那边表现为设置页白屏。
+    assertNoMissingFiles();
     const dest = path.join(REPO, 'resources/dsh-plugins/link');
     const n = syncTo(dest);
     console.log('[link] 已同步 ' + n + ' 个文件到仓库 ' + path.relative(REPO, dest));
