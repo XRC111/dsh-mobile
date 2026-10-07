@@ -34,6 +34,7 @@ import { MOBILE_METHODS, DEFAULT_PORT, fileChunks } from './link-protocol/protoc
 import { open } from './link-protocol/secret.js';
 import { registerRoutes } from './link-protocol/routes.js';
 import { RELAY_METHOD, REMOTE_PROVIDER, REMOTE_PROVIDER_LABEL, RELAY_POLICY, RELAY_ADVERTISED, LIST_METHOD, LIST_ADVERTISED, relayStream, safeProviders, safeModels } from './link-protocol/llmrelay.js';
+import { createRemoteAdapter, setForwardStream, isRemoteProvider } from './link-protocol/remote-adapter.js';
 import { executeLocally } from './link-protocol/relayexec.js';
 import { loadOrCreateIdentity, TOPOLOGY } from './link-protocol/mesh-identity.js';
 import { Registry } from './link-protocol/mesh-registry.js';
@@ -633,23 +634,58 @@ async function prefetchRemoteModels(conn) {
     let remoteModels = null;
     ctx.effect(() => {
         if (!ctx.get('llm')) return;
-        // 让 "经另一台设备调用" 出现在模型选择器里。
-        ctx.llm.registerConfigurableProviders([{
-            provider: REMOTE_PROVIDER,
-            displayName: REMOTE_PROVIDER_LABEL,
-            settingsNs: ctx.fiber?.entry?.options?.id ?? 'dsh-android-link',
-            settingsPath: [],
-        }]);
-        // 转发器：命中且允许转发时短路，替换默认路由。
+        // ── 注册「经另一台设备调用」为**真正的** provider ───────────────────
+        //
+        // ⚠️⚠️ 这里原来调的是 `registerConfigurableProviders`，我以为那能让
+        //    provider 出现在模型选择器里 —— **那是错的**，已核对 dsh-llm 源码：
+        //
+        //      registerConfigurableProviders → 写 this.directory（去哪填凭据）
+        //      listProviders()             → 读 this.adapters（能执行的实现）
+        //
+        //    两者不是一回事。所以「经另一台设备调用」**从来没有出现在任何
+        //    下拉里** —— 桌面也一样。之前转发能工作，靠的是下面那个
+        //    llm/stream 拦截（本地跑不了就转发，用户不用选任何东西）。
+        //
+        // 现在注册真 adapter：它会像其它 provider 一样出现在下拉、可被选中，
+        // 而且 listModels 会列出**对端真实有的**模型（经 llm.list 取得）。
+        //
+        // 注册时机：effect 会在 mesh 就绪后重跑一次，所以设备上线后 provider
+        // 才会出现 —— 这与 llm.adapters-updated 的既有机制一致。
+        const adapter = createRemoteAdapter({
+            peers: () => relayPeers(),
+        });
+        // 转发实现注入：adapter 自身要能把流转出去，复用插件里已有的那条
+        // （先直连、再经中转、失败时列出试过谁）。
+        setForwardStream((opts) => relayViaAnyPeer(opts));
+        ctx.llm.registerAdapter([REMOTE_PROVIDER], adapter);
+
+        // 转发器：本地跑不了且允许转发时，短路到对端。
         const forward = (options, next) => {
-            // 没开启转发、或这个 provider 本来就是"经另一台设备调用"，
-            // 都按原样本地走。
-            if (!remoteEnabled || !options || options.provider === REMOTE_PROVIDER) return next();
+            // 没开启转发、或这个 provider 本来就是「经另一台设备调用」
+            // （那时会走 adapter 自己的 stream），都按原样本地走。
+            if (!remoteEnabled || !options || isRemoteProvider(options.provider)) return next();
             return relayViaAnyPeer(options);
         };
         ctx.on('llm/stream', forward);
         return () => ctx.off('llm/stream', forward);
     }, 'dsh-link: llm relay');
+
+    /**
+     * 当前在线、且宣告了模型转发能力的设备（adapter 的数据源）。
+     *
+     * 带上 conn —— adapter 的 listModels 要用它发 llm.list。
+     */
+    function relayPeers() {
+        if (!mesh) return [];
+        return mesh.onlinePeers()
+            .filter((p) => (p.capabilities ?? []).includes(RELAY_ADVERTISED))
+            .map((p) => ({
+                deviceId: p.deviceId,
+                name: p.name,
+                capabilities: p.capabilities,
+                conn: p.conn ?? mesh.connectionTo?.(p.deviceId),
+            }));
+    }
 
     /**
      * 把请求转给**任意一台**宣告了模型转发能力的设备。
