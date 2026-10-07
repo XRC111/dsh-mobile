@@ -18,6 +18,18 @@ app/.cxx/
 local.properties
 gradle.properties.bak
 
+# ⚠️ 签名密钥同样绝不能进仓库。
+# app/dsh-release.p12 是**发布身份**本身：谁拿到它就能给这个包名签出
+# 「看起来合法」的更新包，用户会装上恶意更新而毫无察觉。口令在
+# local.properties 的 KS_PASS 里（那个文件本来就不入库）。
+#
+# ⚠️ 但这份文件丢了就**永远无法**给 com.dshdesktop.android 发更新 ——
+#    Android 要求所有更新用同一把密钥。所以它必须离线备份（密码管理器附件、
+#    离线 U 盘），不能只靠仓库里这一份。
+app/*.p12
+app/*.jks
+app/*.keystore
+
 # ── 依赖 ───────────────────────────────────────────────────────────────────
 node_modules/
 
