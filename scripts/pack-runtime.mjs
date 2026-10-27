@@ -213,6 +213,28 @@ async function main() {
         process.exit(1);
     }
 
+    // 1.2) 剔除只在源码导航/调试时用到的文件
+    //      0.2.1 起上游每个包都附带 .ts/.cts 源文件与 sourcemap：解开后 6.2 万文件 / 440 MB，
+    //      但 Android 运行时只 require 编译产物（package.json 的 main/exports 全指向 .js）。
+    //      实测 0.2.1-rc.4：删掉后 2.4 万文件 / 218 MB，tar.gz 81 MB → 42 MB，
+    //      APK 少 ~39 MB、首启解压少 ~220 MB，web profile 启动正常。
+    //      ⚠️ 只按扩展名删，不改 package.json —— 不碰上游的模块解析规则。
+    let prunedFiles = 0, prunedBytes = 0;
+    const pruneSources = (dir) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            const p = path.join(dir, e.name);
+            if (e.isDirectory()) { pruneSources(p); continue; }
+            if (!e.isFile()) continue;
+            if (/\.(ts|cts|mts|map)$/.test(e.name)) {
+                prunedBytes += fs.statSync(p).size;
+                fs.unlinkSync(p);
+                prunedFiles++;
+            }
+        }
+    };
+    pruneSources(STAGE);
+    console.log(`    剔除 TS 源码/sourcemap：${prunedFiles} 文件 / ${(prunedBytes / 1048576).toFixed(0)} MB`);
+
     // 2) 注入平台 stub 与 Win32 专用包空壳
     //    sharp：无 libvips → 图片透传（保 attachments 服务链）
     //    koffi：无 Android FFI → 类型定义类调用返回惰性对象

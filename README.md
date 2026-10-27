@@ -133,7 +133,7 @@ adb install app-debug.apk
 | 项 | 说明 |
 | --- | --- |
 | Node 引擎 | `libnode.so`（arm64-v8a），由 APK 直接映射加载 |
-| dsh 依赖树 | 25,000+ 文件 / 约 170 MB，gzip 压缩到约 44 MB |
+| dsh 依赖树 | 上游原始 6.2 万文件 / 440 MB；打包时剔除 TS 源码与 sourcemap，APK 内约 42 MB（解压后 2.4 万文件 / 218 MB） |
 | 首启解压 | 纯 JS 流式解压器，不依赖系统工具 |
 | 校验 | assets 指纹按内容 CRC32，不是只比大小 |
 

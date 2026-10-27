@@ -34,6 +34,26 @@ const TARGETS = [
     path.join(ROOT, 'plugins/@dsh-android/link/lib/link-protocol'),
 ];
 
+/**
+ * 桌面分发副本里**由 dsh-desktop 自己维护**、不该与规范源逐字节相同的文件。
+ *
+ * ⚠️ 为什么是这个清单：这两个文件是桌面侧独有的依赖边界，不是共享协议。
+ *
+ *   · lib/easytier.js —— 内嵌组网的 koffi 绑定。手机侧那份是 JNI（Kotlin），
+ *     桌面侧是 Windows FFI，**实现必然不同**；dll 的落位路径也只对桌面成立。
+ *   · lib/link-protocol/remote-adapter.js —— 这里曾经写过一段注释说它「桌面侧
+ *     不需要」，那是**错的**：不带它，桌面侧 import 直接
+ *     ERR_MODULE_NOT_FOUND，插件整个加载失败（设置页白屏）。
+ *     桌面端已经有两处 import 它（lib/index.js 与 llmrelay 的调用链），
+ *     所以它必须是同步的，不能进这个清单。
+ *
+ * 加进这里的判据只有一个：**同一份代码在两端不可能同时成立**。
+ * 「桌面端还没做」不是理由 —— 那种情况应该同步过去，让缺失在桌面侧显式暴露。
+ */
+const DESKTOP_LOCAL_ONLY = new Set([
+    'lib/easytier.js',
+]);
+
 /** 比较两个 x.y.z 版本号：a>b → 1，a<b → -1，相等 0。无法解析按 0。 */
 function cmpVer(a, b) {
     const pa = String(a).match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -84,7 +104,13 @@ test('dsh-desktop 仓库里的分发副本与规范源一致', () => {
     };
     const files = walk(src);
     assert.ok(files.length >= 6, '规范源文件数异常');
+    // 反向校验：清单里写了一个规范源并不存在的路径，说明文件被删了而清单没跟上 ——
+    // 那样这个文件就永久脱离了校验（不报错、也不再比对）。宁可红一次。
+    for (const rel of DESKTOP_LOCAL_ONLY) {
+        assert.ok(fs.existsSync(path.join(src, rel)), '本地专属清单里的 ' + rel + ' 在规范源里不存在了（清单过期？）');
+    }
     for (const rel of files) {
+        if (DESKTOP_LOCAL_ONLY.has(rel)) continue;
         const bPath = path.join(copy, rel);
         assert.ok(fs.existsSync(bPath), '分发副本缺 ' + rel + '（跑 node scripts/sync-desktop-plugin.mjs）');
         const a = fs.readFileSync(path.join(src, rel), 'utf8');
@@ -97,13 +123,29 @@ test('dsh-desktop 仓库里的分发副本与规范源一致', () => {
             // 早先没排除，于是每次跑 pack-all 之后这个测试就红一次，
             // 很容易被误当成「副本没同步成功」。
             //
-            // 这里改验真正该保证的东西：name 一致、版本**不倒退**。
+            // 这里改验真正该保证的东西：name 一致、版本**不倒退**，
+            // 外加「除版本与内容戳之外，其余字段必须一致」——
+            // 只查 name 太松了：exports / dsh.client.inject 这些字段一旦两边不同，
+            // 表现同样是「功能时好时坏」（比如桌面侧少了某个 inject，设置页那一节
+            // 静默不渲染），而版本号看起来完全正常。
             const pa = JSON.parse(a);
             const pb = JSON.parse(b);
             assert.equal(pb.name, pa.name, '分发副本的 name 与规范源不一致');
             assert.ok(
                 cmpVer(pb.version, pa.version) >= 0,
                 `分发副本版本 ${pb.version} 低于规范源 ${pa.version}（版本倒退）`,
+            );
+            // 剔除两个本来就该变的字段后逐键比对。
+            const strip = (o) => {
+                const c = { ...o };
+                delete c.version;
+                delete c.dshDesktopBuild;
+                return JSON.stringify(c, Object.keys(c).sort());
+            };
+            assert.equal(
+                strip(pb),
+                strip(pa),
+                '分发副本 package.json 除版本/内容戳外与规范源不一致（跑 node scripts/sync-desktop-plugin.mjs）',
             );
             continue;
         }

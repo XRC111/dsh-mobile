@@ -28,6 +28,19 @@ const SOURCE = path.join(ROOT, 'desktop-plugins/@dsh-desktop/link');
 const REPO = process.env.DSH_DESKTOP_REPO ?? path.resolve(ROOT, '..', 'dsh-desktop');
 const HOME = process.env.DSH_HOME ?? path.join(os.homedir(), 'AppData/Roaming/DSH-Desktop/dsh-home');
 
+/**
+ * 规范源有、但**必须留在桌面仓库之外**的文件（桌面端自带，不属于同步范围）。
+ *
+ * 目前只有 lib/easytier.js：它是 desktop-plugins 目录里的本地辅助模块而不是
+ * 共享协议，桌面侧对应内容由 dsh-desktop 自己维护（dsh-desktop 仓库里有一份
+ * 更长、带真实 dll 落位路径的版本）。
+ *
+ * ⚠️ 但它**仍然要进 link-protocol-copies.test.mjs 的比对** —— 那份测试按目录
+ *    遍历，走了这个清单就查不到它，于是「手机侧改了、桌面侧没改」这种漂移
+ *    会静默存在。所以本清单只是「不复制」，不是「不校验」。
+ */
+const LOCAL_ONLY = ['lib/easytier.js'];
+
 /** 需要同步的文件（显式列出，避免把临时文件也带过去）。 */
 const FILES = [
     'package.json',
@@ -45,7 +58,7 @@ const FILES = [
     'lib/link-protocol/netinfo.js',
     'lib/link-protocol/llmrelay.js',
     'lib/link-protocol/relayexec.js',
-    'lib/easytier.js',
+    // ⚠️ lib/easytier.js 在 LOCAL_ONLY 里，**不加进来** —— 原因见那个清单的注释。
     // 「经另一台设备调用」的 llm adapter。
     // ⚠️ 这个文件同时出现在 sync-link-protocol.mjs 的 FILES 里 —— 两个脚本各有一份
     //    独立的清单，加新文件时**两处都要改**。漏了任一处的症状不同但都很难查：
@@ -80,16 +93,25 @@ function sourceJsFiles(dir = SOURCE, prefix = '') {
     return out;
 }
 
-/** 检查 FILES 是否覆盖了规范源里所有的 .js。 */
+/** 检查 FILES 是否覆盖了规范源里所有的 .js（LOCAL_ONLY 除外）。 */
 function assertNoMissingFiles() {
     const listed = new Set(FILES);
-    const missing = sourceJsFiles().filter((f) => !listed.has(f));
+    const localOnly = new Set(LOCAL_ONLY);
+    const missing = sourceJsFiles().filter((f) => !listed.has(f) && !localOnly.has(f));
     if (missing.length) {
         throw new Error(
-            'FILES 清单漏了这些文件（加进 scripts/sync-desktop-plugin.mjs 的 FILES）：\n  ' +
+            'FILES 清单漏了这些文件（加进 scripts/sync-desktop-plugin.mjs 的 FILES；' +
+            '确实不该同步的加进 LOCAL_ONLY 并写清理由）：\n  ' +
             missing.join('\n  ') +
             '\n漏了的后果：分发副本里没有它们，用户点开设置页会白屏。',
         );
+    }
+    // 反过来也查一遍：清单里写了一个规范源中不存在的文件，syncTo 会在复制时
+    // 抛「规范源缺文件」，但那时已经复制了一半 —— 先拦下来更清楚。
+    for (const rel of FILES) {
+        if (!fs.existsSync(path.join(SOURCE, rel))) {
+            throw new Error('FILES 里有规范源不存在的文件：' + rel + '（清单写错了？）');
+        }
     }
 }
 

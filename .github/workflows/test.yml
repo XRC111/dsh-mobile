@@ -26,9 +26,9 @@
 # ── 运行时 artifact 从哪来 ────────────────────────────────────────────────────
 # 手动：本地跑 npm run pack:runtime，然后
 #   gh workflow run runtime-pack.yml
-# 或直接用本地已有的 app/src/main/assets/bundle/dsh-runtime.bin（43.9MB）。
+# 或直接用本地已有的 app/src/main/assets/bundle/dsh-runtime.bin（42MB）。
 # 由 runtime-pack.yml 负责上传，apk-build 负责下载 —— 两者分离是为了
-# 「运行时没变就别重跑 44MB 的传输」。
+# 「运行时没变就别重跑 42MB 的传输」。
 #
 # ── 跑什么 ────────────────────────────────────────────────────────────────────
 # 直接跑 npm run test:all，不逐个列举 —— 少写一个套件名就等于少跑一个测试，
@@ -79,7 +79,7 @@ jobs:
         run: npm run test:all
 
   apk-build:
-    # APK 构建单开一个 job：它要 44MB 运行时与 Gradle 缓存，比测试慢得多，
+    # APK 构建单开一个 job：它要 42MB 运行时与 Gradle 缓存，比测试慢得多，
     # 混在一起会让「测试挂了」要等构建完才看得到。
     runs-on: windows-2022
     timeout-minutes: 45
