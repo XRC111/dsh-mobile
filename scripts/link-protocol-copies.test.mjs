@@ -37,22 +37,20 @@ const TARGETS = [
 /**
  * 桌面分发副本里**由 dsh-desktop 自己维护**、不该与规范源逐字节相同的文件。
  *
- * ⚠️ 为什么是这个清单：这两个文件是桌面侧独有的依赖边界，不是共享协议。
+ * ⚠️ 当前是空集，请保持为空。这个清单存在过一版，当时把 lib/easytier.js
+ *    排除在外，理由是「两端实现必然不同（手机 JNI / 桌面 FFI）」。
+ *    实际核对后是错的：
+ *      · 这个插件目录（desktop-plugins/@dsh-desktop/link）本来就**只服务桌面**，
+ *        手机侧的实现另有 plugins/@dsh-android/link，两边从不需要共用一个文件；
+ *      · dsh-desktop 里没有任何 easytier 实现，而 lib/index.js 直接
+ *        `import * as et from './easytier.js'` —— 排除同步的后果是
+ *        ERR_MODULE_NOT_FOUND，整个插件加载失败、设置页白屏。
+ *    实测确认过（用桩包隔离宿主依赖后 import）。
  *
- *   · lib/easytier.js —— 内嵌组网的 koffi 绑定。手机侧那份是 JNI（Kotlin），
- *     桌面侧是 Windows FFI，**实现必然不同**；dll 的落位路径也只对桌面成立。
- *   · lib/link-protocol/remote-adapter.js —— 这里曾经写过一段注释说它「桌面侧
- *     不需要」，那是**错的**：不带它，桌面侧 import 直接
- *     ERR_MODULE_NOT_FOUND，插件整个加载失败（设置页白屏）。
- *     桌面端已经有两处 import 它（lib/index.js 与 llmrelay 的调用链），
- *     所以它必须是同步的，不能进这个清单。
- *
- * 加进这里的判据只有一个：**同一份代码在两端不可能同时成立**。
- * 「桌面端还没做」不是理由 —— 那种情况应该同步过去，让缺失在桌面侧显式暴露。
+ * 加进这里的唯一判据：**同一份代码在同一个目录里不可能同时成立**。
+ * 「桌面端还没做」、「两端实现不同」都不是理由。
  */
-const DESKTOP_LOCAL_ONLY = new Set([
-    'lib/easytier.js',
-]);
+const DESKTOP_LOCAL_ONLY = new Set([]);
 
 /** 比较两个 x.y.z 版本号：a>b → 1，a<b → -1，相等 0。无法解析按 0。 */
 function cmpVer(a, b) {
@@ -151,6 +149,46 @@ test('dsh-desktop 仓库里的分发副本与规范源一致', () => {
         }
         assert.equal(b, a, rel + ' 分发副本与规范源不一致（跑 node scripts/sync-desktop-plugin.mjs）');
     }
+});
+
+test('桌面分发副本的内部 import 全都能解析到文件', () => {
+    // ⚠️ 这条是上面那个「逐文件比对」查不到的盲区补丁：
+    //    比对只遍历**规范源里有的文件**，而「桌面侧 import 了一个规范源里
+    //    没有的东西」不在遍历范围里 —— 那种情况下副本缺文件，但因为源里也没有，
+    //    测试完全看不见。而后果是最严重的：ERR_MODULE_NOT_FOUND，
+    //    整个插件加载失败，设置页白屏。
+    //
+    //    真实踩过：lib/index.js import './easytier.js'，而同步清单里漏了它。
+    const repo = process.env.DSH_DESKTOP_REPO ?? path.resolve(ROOT, '..', 'dsh-desktop');
+    const copy = path.join(repo, 'resources/dsh-plugins/link');
+    if (!fs.existsSync(copy)) {
+        console.log('  （跳过：找不到 ' + copy + '）');
+        return;
+    }
+    const walk = (dir, prefix = '') => {
+        const out = [];
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            const rel = prefix ? prefix + '/' + e.name : e.name;
+            if (e.isDirectory()) out.push(...walk(path.join(dir, e.name), rel));
+            else if (e.name.endsWith('.js')) out.push(rel);
+        }
+        return out;
+    };
+    const missing = [];
+    for (const rel of walk(copy)) {
+        const text = fs.readFileSync(path.join(copy, rel), 'utf8')
+            // 先剥注释：代码里存在 `import ... from './x.js'` 出现在
+            // **注释**里的情况（比如 ERR_MODULE_NOT_FOUND 的报错样例），
+            // 直接正则扫描会把它当成真导入 —— 本断言第一次跑就是这么误报的。
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/(^|[^:])\/\/.*$/gm, '$1');
+        // 只认相对导入；裸包名由宿主提供，这里管不着。
+        for (const m of text.matchAll(/from\s+'(\.[^']+)'/g)) {
+            const target = path.resolve(path.dirname(path.join(copy, rel)), m[1]);
+            if (!fs.existsSync(target)) missing.push(rel + ' → ' + m[1]);
+        }
+    }
+    assert.deepEqual(missing, [], '桌面分发副本里有解析不到的 import（同步清单漏了文件？）：\n  ' + missing.join('\n  '));
 });
 
 test('两端插件都不依赖安装期包管理器', () => {

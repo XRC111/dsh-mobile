@@ -29,17 +29,21 @@ const REPO = process.env.DSH_DESKTOP_REPO ?? path.resolve(ROOT, '..', 'dsh-deskt
 const HOME = process.env.DSH_HOME ?? path.join(os.homedir(), 'AppData/Roaming/DSH-Desktop/dsh-home');
 
 /**
- * 规范源有、但**必须留在桌面仓库之外**的文件（桌面端自带，不属于同步范围）。
+ * 规范源有、但**不该同步到桌面仓库**的文件。
  *
- * 目前只有 lib/easytier.js：它是 desktop-plugins 目录里的本地辅助模块而不是
- * 共享协议，桌面侧对应内容由 dsh-desktop 自己维护（dsh-desktop 仓库里有一份
- * 更长、带真实 dll 落位路径的版本）。
+ * ⚠️ 当前是空集，而且请保持为空 —— 这个清单存在过一版，当时把
+ *    lib/easytier.js 放进来，理由是「桌面侧自己维护一份实现」。
+ *    **那是错的**：dsh-desktop 里根本没有那份实现，而桌面侧 lib/index.js
+ *    第一行就是 `import * as et from './easytier.js'` ——
+ *    实测（用桩包隔离宿主依赖后直接 import）：
+ *      ERR_MODULE_NOT_FOUND: Cannot find module '.../link/lib/easytier.js'
+ *    整个 link 插件加载失败，表现是设置页那一节直接白屏，而不是「组网不可用」。
  *
- * ⚠️ 但它**仍然要进 link-protocol-copies.test.mjs 的比对** —— 那份测试按目录
- *    遍历，走了这个清单就查不到它，于是「手机侧改了、桌面侧没改」这种漂移
- *    会静默存在。所以本清单只是「不复制」，不是「不校验」。
+ *    所以：只要规范源里有、桌面侧 import 了，就必须同步。
+ *    「桌面端还没做」不是排除理由 —— 那种情况应该同步过去，让缺失在桌面侧
+ *    显式暴露（code 里的 available=false + hint 已经处理了这个分支）。
  */
-const LOCAL_ONLY = ['lib/easytier.js'];
+const LOCAL_ONLY = [];
 
 /** 需要同步的文件（显式列出，避免把临时文件也带过去）。 */
 const FILES = [
@@ -58,7 +62,8 @@ const FILES = [
     'lib/link-protocol/netinfo.js',
     'lib/link-protocol/llmrelay.js',
     'lib/link-protocol/relayexec.js',
-    // ⚠️ lib/easytier.js 在 LOCAL_ONLY 里，**不加进来** —— 原因见那个清单的注释。
+    // ⚠️ 必须同步：桌面侧 lib/index.js 直接 import 它，缺了就整个插件加载失败。
+    'lib/easytier.js',
     // 「经另一台设备调用」的 llm adapter。
     // ⚠️ 这个文件同时出现在 sync-link-protocol.mjs 的 FILES 里 —— 两个脚本各有一份
     //    独立的清单，加新文件时**两处都要改**。漏了任一处的症状不同但都很难查：
