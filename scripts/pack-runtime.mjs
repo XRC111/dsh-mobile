@@ -309,6 +309,34 @@ async function main() {
     //     不进 tar：插件是外壳自己的代码，与运行时解耦，改插件不必重打 34MB 包。
     stageShellPlugins();
 
+    // 2c) 兼容豁免：扫随包分发的插件，算出该写进 compatibility.json 的精确豁免。
+    //
+    //     为什么接在这里、而不是让人手动跑：手机上插件是随 APK 固定的，
+    //     没有「用户点安装」这个时刻，也就没有 allow-version 可调 —— 构建期
+    //     是唯一能判的时机。而这个判定的输入（展开的 node_modules）只在
+    //     runtime-pack 这条流水线上存在：test.yml 拿到的是 dsh-runtime.bin
+    //     二进制，里面没有能 require 的包，到那一步已经判不了了。
+    //
+    //     漏跑的后果是静默的：compatibility.json 不存在，launcher 的
+    //     installCompatExemptions 找不到东西、什么也不做，APK 照常出包，
+    //     只是内置的旧插件在启动时被判不兼容而加载失败。所以把它钉进流程。
+    //
+    //     必须在 stageShellPlugins() 之后：那个函数才把外壳插件拷进
+    //     assets/bundle/plugins/，而生成器两个目录都要扫。
+    //     也必须在 pruneSources() 之后（本步之前已完成）：剪枝决定了手机上
+    //     实际有哪些包，按剪枝前的树判会高估可用性。
+    console.log('[1.6/3] 生成兼容豁免…');
+    const compat = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'gen-mobile-compat.mjs')], {
+        stdio: 'inherit',
+        env: { ...process.env, NODE_OPTIONS: '' },
+    });
+    if (compat.status !== 0) {
+        // 生成器在发现「内置插件在当前宿主上跑不起来」时自己 exit(1)。
+        // 这种情况打出来的包必然有一个插件加载失败，不如在这里停住。
+        console.error('兼容豁免生成失败（exit=' + compat.status + '），先修插件再打包。');
+        process.exit(1);
+    }
+
     // 3) tar.gz（复用 dsh-desktop 的 tar 包；系统 tar.exe 被 shim 拦截）
     console.log('[2/3] tar.gz 打包（gzip level 6）…');
     // ⚠️ 这里曾经**硬编码** 'D:/code/dsh-desktop/'，而上面的 SRC 明明支持

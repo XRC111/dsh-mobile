@@ -108,8 +108,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dsh-runtime
+          # 兼容豁免必须跟运行时同源上传：它是 pack:runtime 用**这份**展开的运行时
+          # 算出来的，与运行时版本一一对应。让 apk-build 用仓库里那份，就等于拿
+          # 一个可能属于旧运行时的判定去跑新运行时 —— 症状是内置插件突然被判
+          # 不兼容，而 compatibility.json 本身看起来完全正常。
+          # apk-build 那边 `Copy-Item "$src/*"` 会连它一起拷进 assets，无需改脚本。
           path: |
             app/src/main/assets/bundle/dsh-runtime.bin
             build/runtime-manifest.json
+            app/src/main/assets/bundle/compatibility.json
           retention-days: 30
           if-no-files-found: error

@@ -343,6 +343,99 @@ function installPnpmLite(bundleDir, homeDir) {
     }
 }
 
+/**
+ * 把随包的兼容豁免合并进 profile 的 compatibility.json。
+ *
+ * ── 为什么需要它 ────────────────────────────────────────────────────────────
+ * dsh 0.2 起有安装/加载前 gate：插件的 engines.dsh 或 @deepseek-ai/dsh* peer
+ * 不满足就拒绝加载，唯一放行通道是 profile 下的 `compatibility.json`
+ * （精确 `包名@版本` → 允许的 dsh 版本列表）。
+ *
+ * 手机上的插件是随 APK 固定的，没有「用户点安装」这个时刻，也就没机会去调
+ * `dsh plugin allow-version`。所以豁免在构建期算好、随包带下来，这里只负责落位。
+ *
+ * ── 只增不删 ────────────────────────────────────────────────────────────────
+ * 这个文件里可能有用户手动 `dsh plugin allow-version` 写的条目。整体覆盖等于
+ * 把人家的授权删了，而表现是「明明授权过，重装 APK 后又装不上」。
+ * 所以逐键合并；读不动就整份不动（宁可这次不放行，也不能毁掉用户的授权）。
+ *
+ * @param {string} bundleDir APK 里的 bundle 目录
+ * @param {string} homeDir $DSH_HOME
+ */
+function installCompatExemptions(bundleDir, homeDir) {
+    const result = { written: false, added: 0 };
+    try {
+        const source = path.join(bundleDir, 'compatibility.json');
+        if (!fs.existsSync(source)) {
+            log('no compatibility.json in bundle, skipping legacy-compat exemptions');
+            return result;
+        }
+        let incoming;
+        try {
+            incoming = JSON.parse(fs.readFileSync(source, 'utf8'));
+        } catch (error) {
+            log('WARNING: bundle compatibility.json is not valid JSON (' + (error && error.message) + '), skipped');
+            return result;
+        }
+        if (incoming === null || typeof incoming !== 'object' || Array.isArray(incoming)) {
+            log('WARNING: bundle compatibility.json must map package@version to version lists, skipped');
+            return result;
+        }
+
+        const profileDir = path.join(homeDir, 'profiles', 'web');
+        fs.mkdirSync(profileDir, { recursive: true });
+        const target = path.join(profileDir, 'compatibility.json');
+
+        let current = {};
+        if (fs.existsSync(target)) {
+            try {
+                const parsed = JSON.parse(fs.readFileSync(target, 'utf8'));
+                if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    log('WARNING: existing compatibility.json is not a map, leaving it untouched');
+                    return result;
+                }
+                current = parsed;
+            } catch (error) {
+                // 读不动就不写：覆盖掉等于抹掉用户已有的授权。
+                log('WARNING: existing compatibility.json unreadable (' + (error && error.message) + '), left untouched');
+                return result;
+            }
+        }
+
+        let added = 0;
+        for (const key of Object.keys(incoming)) {
+            const versions = incoming[key];
+            if (!Array.isArray(versions)) continue;
+            const before = Array.isArray(current[key]) ? current[key] : [];
+            const next = before.slice();
+            for (const version of versions) {
+                if (typeof version === 'string' && !next.includes(version)) next.push(version);
+            }
+            if (next.length !== before.length) added += 1;
+            current[key] = next;
+        }
+        if (added === 0) {
+            log('compatibility exemptions already up to date');
+            return result;
+        }
+
+        // 原子写：dsh 启动时就读这个文件，半截内容会被判为「不可读 → 当作没有
+        // 豁免」，表现是「明明写过，重启又装不上」。
+        const ordered = {};
+        for (const key of Object.keys(current).sort()) ordered[key] = current[key];
+        const temp = target + '.tmp';
+        fs.writeFileSync(temp, JSON.stringify(ordered, null, 2) + '\n');
+        fs.renameSync(temp, target);
+        result.written = true;
+        result.added = added;
+        log('merged ' + added + ' compatibility exemption(s) into ' + target);
+        return result;
+    } catch (error) {
+        log('compat exemptions install failed: ' + (error && error.message));
+        return result;
+    }
+}
+
 /** 递归复制目录（目标已由调用方清空）。 */
 function copyDir(from, to) {
     fs.mkdirSync(to, { recursive: true });
@@ -481,6 +574,15 @@ async function main() {
         log('pnpm-lite install threw (ignored): ' + (error && error.message));
     }
 
+    // 2b-3) 旧插件兼容豁免：把构建期算好的精确豁免合并进 profile。
+    //       必须在 dsh 启动之前 —— gate 在加载 profile 时就跑，晚了没有意义。
+    //       只在构建期确实算出条目时才会动文件（见 scripts/gen-mobile-compat.mjs）。
+    try {
+        installCompatExemptions(bundleDir, homeDir);
+    } catch (error) {
+        log('compat exemptions install threw (ignored): ' + (error && error.message));
+    }
+
     // 2c) 原生插件加载自检。
     //     会话持久化要 flock → flock 要加载 system.node → 加载失败则会话起不来 →
     //     工具调不到。也就是说「能跑诊断工具」和「需要诊断」互斥。所以把自检放在
@@ -563,7 +665,7 @@ async function main() {
 // ⚠️ 这个导出**不能省**：验证脚本若自己抄一份 PATCHES，就会出现「脚本里是一份、
 //    launcher 里是另一份」的漂移 —— 验证永远通过，而设备上实际打不上补丁。
 //    验证必须针对**真正生效的那份常量**。
-module.exports = { DSMARKET_PATCHES, SHIM_APPLY_MARKER, SHIM_HEADER, installPnpmLite };
+module.exports = { DSMARKET_PATCHES, SHIM_APPLY_MARKER, SHIM_HEADER, installPnpmLite, installCompatExemptions };
 
 // 被验证脚本 require 时到此为止，绝不能往下走 main() —— 它会真的去解压运行时、
 // 起 worker、在文件系统上写一堆东西。

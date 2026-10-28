@@ -122,6 +122,14 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dst | Out-Null
           Copy-Item "$src/*" $dst -Force
           Write-Host ("运行时已落位：{0:N1} MB" -f ((Get-Item "$dst/dsh-runtime.bin").Length / 1MB))
+          # 兼容豁免随运行时 artifact 一起来。缺了不会让构建失败（老 artifact 里
+          # 没有这个文件），但**必须让人看见** —— 否则症状是「内置插件加载失败」
+          # 而构建日志一片绿。
+          if (Test-Path "$dst/compatibility.json") {
+            Write-Host "兼容豁免：$(Get-Content "$dst/compatibility.json" -Raw)"
+          } else {
+            Write-Host '::warning::artifact 里没有 compatibility.json —— 这个 APK 不会带任何兼容豁免'
+          }
           if (Test-Path "$src/runtime-manifest.json") {
             New-Item -ItemType Directory -Force -Path 'build' | Out-Null
             Copy-Item "$src/runtime-manifest.json" 'build/' -Force

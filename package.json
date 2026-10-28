@@ -32,6 +32,11 @@
     "install:desktop-link": "node scripts/install-desktop-link.mjs",
     "fetch:addon": "node scripts/fetch-addon.mjs",
     "test:link-stream": "node packages/dsh-link-protocol/test/stream.test.mjs",
-    "test:all": "npm run test:link && npm run test:link-netinfo && npm run test:link-integration && npm run test:link-copies && npm run test:link-stream && npm run test:link-mesh && npm run test:link-mesh-integration && npm run test:link-mesh-driver && npm run test:link-relay && npm run test:link-stream-relay && npm run test:link-imports && npm run test:easytier && npm run test:link-remote-adapter && npm run test:link-contract && npm run test:pnpm-shim"
+    "test:all": "npm run test:link && npm run test:link-netinfo && npm run test:link-integration && npm run test:link-copies && npm run test:link-stream && npm run test:link-mesh && npm run test:link-mesh-integration && npm run test:link-mesh-driver && npm run test:link-relay && npm run test:link-stream-relay && npm run test:link-imports && npm run test:easytier && npm run test:link-remote-adapter && npm run test:link-contract && npm run test:pnpm-shim && npm run test:compat && npm run test:compat-exemptions && npm run test:compat-gen",
+    "test:compat": "node --test packages/dsh-legacy-compat/test/compat.test.mjs",
+    "test:compat-exemptions": "node scripts/compat-exemptions.test.mjs",
+    "test:compat-gen": "node --test scripts/gen-mobile-compat.test.mjs",
+    "compat:mobile": "node scripts/gen-mobile-compat.mjs",
+    "compat:transitions": "node scripts/gen-compat-transitions.mjs"
   }
 }

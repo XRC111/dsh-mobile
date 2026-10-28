@@ -1,0 +1,288 @@
+{
+ "schema": "dsh-legacy-compat/transitions/v1",
+ "note": "由 scripts/gen-compat-transitions.mjs 从真实 npm 运行时生成。只记录两类会让旧插件确定跑不了的变化：宿主侧包消失、导出符号被删。客户端包（dsh-client-*）单独记录，因为它们由浏览器侧模块表提供，Node 解析不到属正常现象，不能据此判死。",
+ "versions": [
+  "0.1.5-rc.3",
+  "0.1.7-rc.2",
+  "0.2.0-rc.2",
+  "0.2.1-rc.4"
+ ],
+ "segments": [
+  {
+   "from": "0.1.5-rc.3",
+   "to": "0.1.7-rc.2",
+   "packagesGone": 6,
+   "packagesAdded": 48,
+   "symbolsGone": 33
+  },
+  {
+   "from": "0.1.7-rc.2",
+   "to": "0.2.0-rc.2",
+   "packagesGone": 0,
+   "packagesAdded": 5,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.2.0-rc.2",
+   "to": "0.2.1-rc.4",
+   "packagesGone": 8,
+   "packagesAdded": 29,
+   "symbolsGone": 14
+  }
+ ],
+ "removedPackages": [
+  {
+   "package": "@deepseek-ai/cordis-plugin-hmr",
+   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
+   "repairedBy": "@deepseek-ai/dsh-hmr",
+   "note": "HMR 插件收进了 dsh 自己的命名空间，能力没变。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent-presets",
+   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
+   "repairedBy": "@deepseek-ai/dsh-agent-preset",
+   "note": "单复数改名。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-code-runtime",
+   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
+   "repairedBy": null,
+   "note": "code-runtime 拆分后不再单独发包。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-code-runtime-worker-thread",
+   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
+   "repairedBy": null,
+   "note": "随 code-runtime 一起下线。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-settings-file",
+   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
+   "repairedBy": "@deepseek-ai/dsh-settings",
+   "note": "settings-file 被 dsh-settings 取代（0.2 起后者还带 profile 感知）。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-workflow-worker-thread",
+   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
+   "repairedBy": null,
+   "note": "worker-thread 版工作流下线。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-experimental-schedule-bundle",
+   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "repairedBy": null,
+   "note": "实验性 bundle 下线；定时任务改由 dsh-schedule（core）承担，没有一一对应的包。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-hook-protocol",
+   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "repairedBy": null,
+   "note": "hooks 机制整体下线，0.2.1 没有替代包。依赖它的插件必须改造。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-hooks-claude-code",
+   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "repairedBy": null,
+   "note": "随 hook-protocol 一起下线。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-hooks-codex",
+   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "repairedBy": null,
+   "note": "随 hook-protocol 一起下线。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-invariants",
+   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "repairedBy": null,
+   "note": "不变量检查并入内部实现，不再作为公开包导出。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-subagent-in-process-driver",
+   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "repairedBy": "@deepseek-ai/dsh-subagent",
+   "note": "驱动实现并回 dsh-subagent 本体。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-webhook",
+   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "repairedBy": null,
+   "note": "webhook 子系统下线，没有替代包。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-webhook-github",
+   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "repairedBy": null,
+   "note": "随 webhook 一起下线。"
+  }
+ ],
+ "removedSymbols": [
+  {
+   "package": "@deepseek-ai/dsh-agent-default-model",
+   "symbols": {
+    "AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE": "0.1.5-rc.3→0.1.7-rc.2",
+    "AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent-instructions",
+   "symbols": {
+    "renderWorkspaceContext": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent-loop",
+   "symbols": {
+    "AGENT_LOOP_SETTINGS_NAMESPACE": "0.1.5-rc.3→0.1.7-rc.2",
+    "AGENT_LOOP_SETTINGS_SCHEMA": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-cordis-host-runner",
+   "symbols": {
+    "HOST_BUILTIN_INSPECTION": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-headless",
+   "symbols": {
+    "internals": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-llm",
+   "symbols": {
+    "offloadRequestImagesWithPolicy": "0.1.5-rc.3→0.1.7-rc.2",
+    "offloadedImagePrefixCount": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-llm-deepseek",
+   "symbols": {
+    "DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET": "0.1.5-rc.3→0.1.7-rc.2",
+    "MAX_CHAT_IMAGE_BYTES": "0.1.5-rc.3→0.1.7-rc.2",
+    "apply": "0.1.5-rc.3→0.1.7-rc.2",
+    "inject": "0.1.5-rc.3→0.1.7-rc.2",
+    "name": "0.1.5-rc.3→0.1.7-rc.2",
+    "resolveRequestImagePolicy": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-permission-presets",
+   "symbols": {
+    "PERMISSION_SETTINGS_NAMESPACE": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-schedule",
+   "symbols": {
+    "allocateScheduleId": "0.1.5-rc.3→0.1.7-rc.2",
+    "apply": "0.1.5-rc.3→0.1.7-rc.2",
+    "inject": "0.1.5-rc.3→0.1.7-rc.2",
+    "name": "0.1.5-rc.3→0.1.7-rc.2",
+    "renderEveryReminderBatchFraming": "0.1.5-rc.3→0.1.7-rc.2",
+    "registerScheduleTools": "0.2.0-rc.2→0.2.1-rc.4"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-settings",
+   "symbols": {
+    "SettingsProvider": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-shell",
+   "symbols": {
+    "SHELL_SETTINGS_NAMESPACE": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-tool-cordis",
+   "symbols": {
+    "AttachmentError": "0.1.5-rc.3→0.1.7-rc.2",
+    "BackendRegistry": "0.1.5-rc.3→0.1.7-rc.2",
+    "DomainImpl": "0.1.5-rc.3→0.1.7-rc.2",
+    "LlmRuntime": "0.1.5-rc.3→0.1.7-rc.2",
+    "RemoteError": "0.1.5-rc.3→0.1.7-rc.2",
+    "Session": "0.1.5-rc.3→0.1.7-rc.2",
+    "SubagentRuntime": "0.1.5-rc.3→0.1.7-rc.2",
+    "SystemPrompt": "0.1.5-rc.3→0.1.7-rc.2",
+    "ToolRuntime": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-tool-jobs",
+   "symbols": {
+    "statusLine": "0.1.5-rc.3→0.1.7-rc.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent-preset-registry",
+   "symbols": {
+    "livePresetMounts": "0.2.0-rc.2→0.2.1-rc.4",
+    "serviceForAgent": "0.2.0-rc.2→0.2.1-rc.4",
+    "standingMountFor": "0.2.0-rc.2→0.2.1-rc.4"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-app-boot",
+   "symbols": {
+    "HARNESS_SOURCE_SECTION": "0.2.0-rc.2→0.2.1-rc.4",
+    "addHarnessSourceSection": "0.2.0-rc.2→0.2.1-rc.4"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-connection",
+   "symbols": {
+    "OperatorPeer": "0.2.0-rc.2→0.2.1-rc.4"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-session-persistence-jsonl",
+   "symbols": {
+    "default": "0.2.0-rc.2→0.2.1-rc.4"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-session-title-llm",
+   "symbols": {
+    "generateSessionTitleWithLlm": "0.2.0-rc.2→0.2.1-rc.4",
+    "registerSessionTitleLlmProvider": "0.2.0-rc.2→0.2.1-rc.4"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-subagent",
+   "symbols": {
+    "resolveChildCwd": "0.2.0-rc.2→0.2.1-rc.4",
+    "settleRun": "0.2.0-rc.2→0.2.1-rc.4",
+    "validateConfiguredCwd": "0.2.0-rc.2→0.2.1-rc.4"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-web-app",
+   "symbols": {
+    "resolveLanTrust": "0.2.0-rc.2→0.2.1-rc.4"
+   }
+  }
+ ],
+ "clientPackages": [
+  {
+   "package": "@deepseek-ai/dsh-client-store",
+   "changedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-ui-primitives",
+   "changedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-ui-slots",
+   "changedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  }
+ ]
+}

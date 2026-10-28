@@ -1,0 +1,76 @@
+{
+  "schema": "dsh-legacy-compat/renames/v1",
+  "note": "人工确认过的包改名/替代关系。只写**确定**的：这份文件里的每一条都会显示给用户当作迁移指引，写错比不写更糟。自动按名字相似度猜过一版，把 dsh-hook-protocol 猜成了 dsh-hmr、dsh-invariants 猜成了 dsh-fs —— 完全无关，所以改成人工维护。",
+  "renames": {
+    "@deepseek-ai/cordis-plugin-hmr": {
+      "to": "@deepseek-ai/dsh-hmr",
+      "since": "0.1.7",
+      "note": "HMR 插件收进了 dsh 自己的命名空间，能力没变。"
+    },
+    "@deepseek-ai/dsh-agent-presets": {
+      "to": "@deepseek-ai/dsh-agent-preset",
+      "since": "0.1.7",
+      "note": "单复数改名。"
+    },
+    "@deepseek-ai/dsh-settings-file": {
+      "to": "@deepseek-ai/dsh-settings",
+      "since": "0.1.7",
+      "note": "settings-file 被 dsh-settings 取代（0.2 起后者还带 profile 感知）。"
+    },
+    "@deepseek-ai/dsh-experimental-schedule-bundle": {
+      "to": null,
+      "since": "0.2.1",
+      "note": "实验性 bundle 下线；定时任务改由 dsh-schedule（core）承担，没有一一对应的包。"
+    },
+    "@deepseek-ai/dsh-hook-protocol": {
+      "to": null,
+      "since": "0.2.1",
+      "note": "hooks 机制整体下线，0.2.1 没有替代包。依赖它的插件必须改造。"
+    },
+    "@deepseek-ai/dsh-hooks-claude-code": {
+      "to": null,
+      "since": "0.2.1",
+      "note": "随 hook-protocol 一起下线。"
+    },
+    "@deepseek-ai/dsh-hooks-codex": {
+      "to": null,
+      "since": "0.2.1",
+      "note": "随 hook-protocol 一起下线。"
+    },
+    "@deepseek-ai/dsh-webhook": {
+      "to": null,
+      "since": "0.2.1",
+      "note": "webhook 子系统下线，没有替代包。"
+    },
+    "@deepseek-ai/dsh-webhook-github": {
+      "to": null,
+      "since": "0.2.1",
+      "note": "随 webhook 一起下线。"
+    },
+    "@deepseek-ai/dsh-invariants": {
+      "to": null,
+      "since": "0.2.1",
+      "note": "不变量检查并入内部实现，不再作为公开包导出。"
+    },
+    "@deepseek-ai/dsh-code-runtime": {
+      "to": null,
+      "since": "0.1.7",
+      "note": "code-runtime 拆分后不再单独发包。"
+    },
+    "@deepseek-ai/dsh-code-runtime-worker-thread": {
+      "to": null,
+      "since": "0.1.7",
+      "note": "随 code-runtime 一起下线。"
+    },
+    "@deepseek-ai/dsh-workflow-worker-thread": {
+      "to": null,
+      "since": "0.1.7",
+      "note": "worker-thread 版工作流下线。"
+    },
+    "@deepseek-ai/dsh-subagent-in-process-driver": {
+      "to": "@deepseek-ai/dsh-subagent",
+      "since": "0.2.1",
+      "note": "驱动实现并回 dsh-subagent 本体。"
+    }
+  }
+}

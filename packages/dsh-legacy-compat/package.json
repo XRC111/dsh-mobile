@@ -1,0 +1,20 @@
+{
+  "name": "@dsh-legacy/compat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH 旧插件兼容层：判定只适配旧版 dsh 的插件在当前宿主上能否运行，并给出可执行的豁免依据。",
+  "main": "./lib/index.mjs",
+  "exports": {
+    ".": "./lib/index.mjs",
+    "./scan": "./lib/scan.mjs",
+    "./surface": "./lib/surface.mjs",
+    "./semver": "./lib/semver.mjs",
+    "./transitions": "./data/transitions.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "data"
+  ]
+}
