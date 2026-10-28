@@ -94,6 +94,10 @@ git apply scripts/patches/dshmarket-legacy-compat.patch
 node scripts/check-dshmarket-compat.mjs   # 三处改动缺一就红
 ```
 
+`pack-all-plugins.mjs` 已经把它接进流程：`upstream` 模式的插件在同步上游后自动
+重放补丁、重算内容哈希；打不上就**构建失败**（否则这次产出的就是一个「没有兼容
+层」的市场，发出去的症状是旧插件全被标成不兼容，而看不出原因）。
+
 ### 移动端
 
 插件随 APK 固定，没有「用户点安装」这个时刻，所以豁免在**构建期**算好：
@@ -137,11 +141,16 @@ node scripts/gen-mobile-compat.mjs --runtime build/runtime-stage \
 | `npm run test:compat` | 判定核心：四态、semver、豁免键格式 |
 | `npm run test:compat-exemptions` | launcher 的合并写入（只增不删、坏 JSON 不动、原子写） |
 | `npm run test:compat-gen` | 生成器端到端：bridged→写豁免、blocked→退出 1、unverified→不写、native→不写 |
+| `node scripts/dshmarket-legacy-compat.test.mjs`（桌面端） | 市场侧判据：跨线判定、engines 优先级、安装目标解析、合并写入 |
 
 第三套是必要的：仓库里真实随包的 5 个插件 peer 全是 `*`，怎么判都是 `native`，
 所以「豁免真被写出来」这件事在真实数据上**永远验证不到** —— 生成器写错键格式、
 把 `unverified` 也算进去，跑一遍照样输出 `{}`，看起来完全正常。只能靠构造的
 运行时 + 构造的插件把三条路各走一遍。
+
+桌面端那套同理：`check-dshmarket-compat.mjs` 只保证「代码还在」，它保证
+「代码还是那个意思」。补丁能重放不代表语义没被改坏，而判宽/判严两个方向的
+后果都是沉默的。
 
 ## 边界：这套机制不承诺什么
 
@@ -152,6 +161,11 @@ node scripts/gen-mobile-compat.mjs --runtime build/runtime-stage \
 - **客户端侧只做粗判**。浏览器侧的模块表运行期才组成，静态无法穷尽。
 - **一次豁免不等于永久豁免**。豁免键是 `包名@精确版本`，插件发新版要重新判。
 - **不覆盖用户授权**。`compatibility.json` 永远是合并写入，读不动就直接放弃。
+- **只覆盖 npm 精确版本目标**。市场点安装时会把目标钉成 `名字@1.2.3`
+  （registry latest 解析成功的前提下），这条路能写豁免。而 GitHub / git / 本地
+  路径安装的目标里没有「最终会装到哪个版本」这个信息 —— 包名和版本都在仓库的
+  package.json 里，装之前拿不到。这类插件仍会被 gate 拒绝，且**不会**被静默放过：
+  用户看到的是 dsh 自己那句 incompatible。
 
 ## 跟版流程
 
