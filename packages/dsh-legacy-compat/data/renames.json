@@ -71,6 +71,41 @@
       "to": "@deepseek-ai/dsh-subagent",
       "since": "0.2.1",
       "note": "驱动实现并回 dsh-subagent 本体。"
+    },
+    "@deepseek-ai/node-addon-landlock-run": {
+      "to": "@deepseek-ai/node-addon-system",
+      "since": "0.1.5",
+      "note": "Landlock 启动器并进 node-addon-system（它的描述就是「a Linux Landlock launcher and asynchronous POSIX flock」）。"
+    },
+    "@deepseek-ai/dsh-host-apiproxy": {
+      "to": null,
+      "since": "0.1.5",
+      "note": "0.1 起拆成 dsh-api-* 控制器与 dsh-sdk-* 两套，没有单一承接包，依赖 ctx.apiProxy 的插件必须改造。"
+    },
+    "@deepseek-ai/dsh-subagent-claude-code": {
+      "to": null,
+      "since": "0.1.5",
+      "note": "外部 CLI provider 下线；0.1 起 subagent 只保留 dsh-subagent 抽象 seam，provider 由调用方自己接。"
+    },
+    "@deepseek-ai/dsh-subagent-codex": {
+      "to": null,
+      "since": "0.1.5",
+      "note": "随 claude-code provider 一起下线。"
+    },
+    "@deepseek-ai/dsh-tool-subagent-report": {
+      "to": null,
+      "since": "0.1.5",
+      "note": "子任务上报工具下线，report 能力并入 ctx.subagents 的 continuation 机制。"
+    },
+    "@deepseek-ai/dsh-agent-spine-demo": {
+      "to": null,
+      "since": "0.1.2-alpha.3",
+      "note": "agent-spine 的示例包，只用于演示，从未是公开 API 的一部分。"
+    },
+    "@deepseek-ai/dsh-experimental-agent-team-web-profile": {
+      "to": "@deepseek-ai/dsh-experimental-agent-team-profile",
+      "since": "0.1.7",
+      "note": "web profile 并回 profile 包（后者现在是「collaboration, tools, and Web UI in one bundle」）。"
     }
   }
 }

@@ -9,8 +9,8 @@
  *
  * 而 dsh 的 `readProfileCompatibility` 只认**精确** `name@version` 与精确
  * 宿主版本，写错一点就整条丢弃。所以必须用构造的运行时 + 构造的插件，把
- * 「bridged → 写豁免」「blocked → 构建失败」「unverified → 不写」三条路都
- * 走过一遍。
+ * 「bridged → 写豁免」「blocked → 构建失败」「unverified → 也写」
+ * 「native → 不写」几条路都走过一遍。
  *
  * 跑：node --test scripts/gen-mobile-compat.test.mjs
  */
@@ -119,10 +119,16 @@ test('blocked（包没了）：退出码 1', () => {
     assert.equal(fs.existsSync(out), false);
 });
 
-test('unverified（纯客户端插件）：默认不写豁免', () => {
+test('unverified（纯客户端插件）：也写豁免 —— 「查不到」不是「跑不了」', () => {
     const { tmp, rt, out } = setup();
     // 逻辑全在浏览器侧：Node 永远查不到 dsh-client-store，所以判不了。
-    // 判不了就不放行 —— 否则「查不到就通过」，等于兼容层对所有主题插件失效。
+    //
+    // 旧行为是「判不了就不放行」，理由是「否则等于兼容层对所有主题插件失效」。
+    // 但那是把两个方向搞反了：不写豁免 = dsh 的 gate 直接拒绝加载这个插件，
+    // 主题类插件（生态里数量最多的一类）一个都装不上。而写进去以后真出问题，
+    // 坏的也只是它自己那块界面，宿主照常起来。
+    //
+    // 唯一仍然硬拦的是 blocked（静态能证明确实缺包/缺符号）。
     const plug = makePlugin(tmp, '@t/theme', { dirName: 'theme',
         manifest: { dsh: { client: { entry: 'client/index.js', inject: ['dsh-client-store'] } } },
         files: {
@@ -133,7 +139,9 @@ test('unverified（纯客户端插件）：默认不写豁免', () => {
     const r = run(['--runtime', rt, '--plugin-dir', plug, '--out', out]);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /unverified=1/, r.stdout);
-    assert.deepEqual(JSON.parse(fs.readFileSync(out, 'utf8')), {});
+    const written = JSON.parse(fs.readFileSync(out, 'utf8'));
+    assert.deepEqual(Object.keys(written), ['@t/theme@1.0.0'], '应当为纯客户端插件写一条精确豁免');
+    assert.deepEqual(written['@t/theme@1.0.0'], [HOST]);
 });
 
 test('native：版本声明本来就满足 → 不算豁免（不能白送一条）', () => {

@@ -112,7 +112,12 @@ function main() {
         }
     }
 
-    const exemptions = exemptionsFor(entries, hostVersion);
+    // includeUnverified: 纯客户端插件（主题、界面面板）的接口在浏览器侧，
+    // 静态查不到 —— 但「查不到」不是「跑不了」。不写豁免等于让 gate 直接
+    // 拒绝加载，而这类插件恰恰是生态里数量最多的一类。写进去之后，真出问题
+    // 也只影响它自己那块界面，不会让宿主起不来。blocked 仍然不写，并且
+    // 下面会让打包失败。
+    const exemptions = exemptionsFor(entries, hostVersion, { includeUnverified: true });
 
     // 如实打印：判不了的必须让人看见，不能悄悄跳过。
     const byVerdict = {};

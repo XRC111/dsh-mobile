@@ -12,13 +12,23 @@
  * 一定会腐烂，而腐烂的表现是「兼容层给出的替代建议指向一个也不存在的包」。
  * 所以：跟版时把新运行时加进 --runtime 列表重跑一次即可。
  *
- * 用法（需要先装好几份运行时，见 README 的「复现差分数据」）：
+ * 用法（需要先装好运行时，见 README 的「复现差分数据」）：
  *
  *   node scripts/gen-compat-transitions.mjs \
- *     --runtime 0.1.5=/tmp/rt-015 \
- *     --runtime 0.1.7=/tmp/rt-0.1.7 \
- *     --runtime 0.2.0=/tmp/rt-0.2.0 \
- *     --runtime 0.2.1=/tmp/dsh-mobile/build/runtime-stage
+ *     --runtime 0.0.1-rc.5=/tmp/rt-v/0.0.1-rc.5 \
+ *     --runtime 0.1.5-rc.3=/tmp/rt-v/0.1.5-rc.3 \
+ *     --runtime 0.2.1-rc.4=/tmp/rt-v/0.2.1-rc.4 \
+ *     --runtime 0.2.2-alpha.2=/tmp/rt-v/0.2.2-alpha.2
+ *
+ * 现在的数据覆盖 npm 上**全部可安装版本**（0.0.1-rc.5 → 0.2.2-alpha.2，
+ * 共 38 个节点）。装的时候有一个坑：
+ *
+ *   npm install --ignore-scripts        ← 对，20~80 秒，包齐
+ *   npm install --ignore-scripts --legacy-peer-deps  ← 错，少装 20+ 个 peer
+ *
+ * 少了 peer 不会报错，只会让差分把那些包记成「在某个版本消失了」，而它们
+ * 其实一直都在。这种错误最麻烦：数据看起来完全正常，只是每一条「消失」都
+ * 可能是假的。
  *
  * 运行时目录指 npm install 的根（里面是 node_modules/@deepseek-ai/...）。
  */
@@ -217,7 +227,6 @@ function main() {
                 }
                 continue;
             }
-            if (!prev.all.includes(name)) addedCount += 1;
             if (info.symbols === null || after.symbols === null) continue;
             const gone = [...info.symbols].filter((s) => !after.symbols.has(s));
             if (gone.length > 0) {
@@ -232,19 +241,44 @@ function main() {
         segments.push({ from: prev.version, to: next.version, packagesGone: goneCount, packagesAdded: addedCount, symbolsGone: symbolGoneCount });
     }
 
+    // ── 只保留「到现在仍然缺」的条目 ────────────────────────────────────────
+    // 差分是逐段扫的，一个包在 0.1.7-alpha.1 被删、0.1.7-alpha.2 又加回来，
+    // 也会被记成「消失于 0.1.7-alpha.1→0.1.7-alpha.2」。而这份数据是给用户
+    // 看「你这个 import 为什么跑不了」的 —— 对着一个现在明明还在的包说
+    // 「它已经没了」，比不给建议更糟。
+    //
+    // 实测踩到过：`dsh-llm-deepseek-account`、`dsh-llm-deepseek-api-key`、
+    // `dsh-util-code-language` 在 0.1.7-alpha.2 短暂消失，0.2.x 又回来了。
+    const stillThere = (name) => {
+        const now = newest.packages.get(name);
+        return now !== undefined && now.resolvable;
+    };
+    const liveRemovedPackages = [...removedPackages.values()].filter((p) => !stillThere(p.package));
+
+    const liveRemovedSymbols = [];
+    for (const [name, map] of removedSymbols) {
+        const now = newest.packages.get(name);
+        // 包整个没了 → 符号自然也没了，保留。
+        // 符号表读不出 → 无法判断，保留（宁可多说一条，不可漏报）。
+        if (now === undefined || !now.resolvable || now.symbols === null) {
+            liveRemovedSymbols.push({ package: name, symbols: Object.fromEntries(map) });
+            continue;
+        }
+        const stillGone = {};
+        for (const [symbol, at] of map) if (!now.symbols.has(symbol)) stillGone[symbol] = at;
+        if (Object.keys(stillGone).length > 0) liveRemovedSymbols.push({ package: name, symbols: stillGone });
+    }
+
     const data = {
         schema: 'dsh-legacy-compat/transitions/v1',
         note: '由 scripts/gen-compat-transitions.mjs 从真实 npm 运行时生成。只记录两类会让旧插件确定跑不了的变化：' +
               '宿主侧包消失、导出符号被删。客户端包（dsh-client-*）单独记录，因为它们由浏览器侧模块表提供，' +
-              'Node 解析不到属正常现象，不能据此判死。',
+              'Node 解析不到属正常现象，不能据此判死。' +
+              '所有条目都已按**最新版本**过滤过：中途消失、后来又回来的包与符号不会出现在这里。',
         versions: snaps.map((s) => s.version),
         segments,
-        removedPackages: [...removedPackages.values()],
-        removedSymbols: [...removedSymbols.entries()].map(([name, map]) => {
-            const removedAt = new Map();
-            for (const [symbol, at] of map) removedAt.set(symbol, at);
-            return { package: name, symbols: Object.fromEntries(removedAt) };
-        }),
+        removedPackages: liveRemovedPackages,
+        removedSymbols: liveRemovedSymbols,
         clientPackages: [...clientPackages.entries()].map(([name, info]) => ({ package: name, ...info })),
     };
 

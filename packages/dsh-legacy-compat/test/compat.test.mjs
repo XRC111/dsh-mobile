@@ -112,6 +112,24 @@ test('要求判定：没有任何声明 → 满足', () => {
     assert.deepEqual(unmetRequirements({ name: 'x', version: '1.0.0' }, '0.2.1-rc.4'), {});
 });
 
+test('要求判定：全版本 —— 0.0.x 与各种旧写法都会被认出「不满足」', () => {
+    // 这是兼容层的入口条件：只有 unmetRequirements 非空，才会往下判能不能跑。
+    // 所有历史版本的声明都必须落进这里，否则它们连被判定的机会都没有。
+    const host = '0.2.1-rc.4';
+    const forms = [
+        '^0.0.9', '~0.0.5', '0.0.1',
+        '>=0.0.1 <0.1.0', '<=0.1.9', '<0.1.0', '0.1.x', '0.1.*',
+        '>=0.1.0-rc.5 <0.2.0',
+    ];
+    for (const range of forms) {
+        const unmet = unmetRequirements({ peerDependencies: { '@deepseek-ai/dsh-session': range } }, host);
+        assert.deepEqual(Object.keys(unmet), ['@deepseek-ai/dsh-session'], `${range} 应当被判不满足`);
+    }
+    // 反方向：要求更高的版本仍然是「不满足」—— 但这一条会被市场侧的下界
+    // 判据挡回去（判不兼容），不是兼容层该放行的。
+    assert.deepEqual(Object.keys(unmetRequirements({ engines: { dsh: '>=0.2.2' } }, host)), ['engines.dsh']);
+});
+
 // ── 扫描 ────────────────────────────────────────────────────────────────────
 
 function makePlugin(files, manifest = {}) {

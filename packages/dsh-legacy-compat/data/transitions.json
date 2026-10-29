@@ -1,286 +1,877 @@
 {
  "schema": "dsh-legacy-compat/transitions/v1",
- "note": "由 scripts/gen-compat-transitions.mjs 从真实 npm 运行时生成。只记录两类会让旧插件确定跑不了的变化：宿主侧包消失、导出符号被删。客户端包（dsh-client-*）单独记录，因为它们由浏览器侧模块表提供，Node 解析不到属正常现象，不能据此判死。",
+ "note": "由 scripts/gen-compat-transitions.mjs 从真实 npm 运行时生成。只记录两类会让旧插件确定跑不了的变化：宿主侧包消失、导出符号被删。客户端包（dsh-client-*）单独记录，因为它们由浏览器侧模块表提供，Node 解析不到属正常现象，不能据此判死。所有条目都已按**最新版本**过滤过：中途消失、后来又回来的包与符号不会出现在这里。",
  "versions": [
+  "0.0.1-rc.5",
+  "0.1.2-alpha.2",
+  "0.1.2-alpha.3",
+  "0.1.2-alpha.4",
+  "0.1.2-alpha.5",
+  "0.1.2-rc.1",
+  "0.1.3-alpha.2",
   "0.1.5-rc.3",
+  "0.1.6-alpha.1",
+  "0.1.6-alpha.2",
+  "0.1.7-alpha.1",
+  "0.1.7-alpha.2",
+  "0.1.7-rc.1",
   "0.1.7-rc.2",
+  "0.2.0-rc.1",
   "0.2.0-rc.2",
-  "0.2.1-rc.4"
+  "0.2.1-alpha.1",
+  "0.2.1-alpha.2",
+  "0.2.1-alpha.3",
+  "0.2.1-alpha.4",
+  "0.2.1-alpha.5",
+  "0.2.1-rc.1",
+  "0.2.1-rc.2",
+  "0.2.1-rc.3",
+  "0.2.1-rc.4",
+  "0.2.1-rc.5",
+  "0.2.2-alpha.2"
  ],
  "segments": [
   {
+   "from": "0.0.1-rc.5",
+   "to": "0.1.2-alpha.2",
+   "packagesGone": 4,
+   "packagesAdded": 36,
+   "symbolsGone": 49
+  },
+  {
+   "from": "0.1.2-alpha.2",
+   "to": "0.1.2-alpha.3",
+   "packagesGone": 1,
+   "packagesAdded": 0,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.1.2-alpha.3",
+   "to": "0.1.2-alpha.4",
+   "packagesGone": 0,
+   "packagesAdded": 0,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.1.2-alpha.4",
+   "to": "0.1.2-alpha.5",
+   "packagesGone": 0,
+   "packagesAdded": 0,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.1.2-alpha.5",
+   "to": "0.1.2-rc.1",
+   "packagesGone": 0,
+   "packagesAdded": 0,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.1.2-rc.1",
+   "to": "0.1.3-alpha.2",
+   "packagesGone": 0,
+   "packagesAdded": 9,
+   "symbolsGone": 18
+  },
+  {
+   "from": "0.1.3-alpha.2",
+   "to": "0.1.5-rc.3",
+   "packagesGone": 1,
+   "packagesAdded": 10,
+   "symbolsGone": 1
+  },
+  {
    "from": "0.1.5-rc.3",
+   "to": "0.1.6-alpha.1",
+   "packagesGone": 3,
+   "packagesAdded": 16,
+   "symbolsGone": 7
+  },
+  {
+   "from": "0.1.6-alpha.1",
+   "to": "0.1.6-alpha.2",
+   "packagesGone": 1,
+   "packagesAdded": 7,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.1.6-alpha.2",
+   "to": "0.1.7-alpha.1",
+   "packagesGone": 3,
+   "packagesAdded": 26,
+   "symbolsGone": 114
+  },
+  {
+   "from": "0.1.7-alpha.1",
+   "to": "0.1.7-alpha.2",
+   "packagesGone": 3,
+   "packagesAdded": 0,
+   "symbolsGone": 63
+  },
+  {
+   "from": "0.1.7-alpha.2",
+   "to": "0.1.7-rc.1",
+   "packagesGone": 0,
+   "packagesAdded": 0,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.1.7-rc.1",
    "to": "0.1.7-rc.2",
-   "packagesGone": 6,
-   "packagesAdded": 48,
-   "symbolsGone": 33
+   "packagesGone": 0,
+   "packagesAdded": 6,
+   "symbolsGone": 9
   },
   {
    "from": "0.1.7-rc.2",
-   "to": "0.2.0-rc.2",
+   "to": "0.2.0-rc.1",
    "packagesGone": 0,
    "packagesAdded": 5,
    "symbolsGone": 0
   },
   {
+   "from": "0.2.0-rc.1",
+   "to": "0.2.0-rc.2",
+   "packagesGone": 0,
+   "packagesAdded": 0,
+   "symbolsGone": 0
+  },
+  {
    "from": "0.2.0-rc.2",
+   "to": "0.2.1-alpha.1",
+   "packagesGone": 2,
+   "packagesAdded": 4,
+   "symbolsGone": 4
+  },
+  {
+   "from": "0.2.1-alpha.1",
+   "to": "0.2.1-alpha.2",
+   "packagesGone": 6,
+   "packagesAdded": 15,
+   "symbolsGone": 6
+  },
+  {
+   "from": "0.2.1-alpha.2",
+   "to": "0.2.1-alpha.3",
+   "packagesGone": 0,
+   "packagesAdded": 3,
+   "symbolsGone": 5
+  },
+  {
+   "from": "0.2.1-alpha.3",
+   "to": "0.2.1-alpha.4",
+   "packagesGone": 0,
+   "packagesAdded": 4,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.2.1-alpha.4",
+   "to": "0.2.1-alpha.5",
+   "packagesGone": 0,
+   "packagesAdded": 0,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.2.1-alpha.5",
+   "to": "0.2.1-rc.1",
+   "packagesGone": 0,
+   "packagesAdded": 0,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.2.1-rc.1",
+   "to": "0.2.1-rc.2",
+   "packagesGone": 0,
+   "packagesAdded": 2,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.2.1-rc.2",
+   "to": "0.2.1-rc.3",
+   "packagesGone": 0,
+   "packagesAdded": 1,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.2.1-rc.3",
    "to": "0.2.1-rc.4",
-   "packagesGone": 8,
-   "packagesAdded": 29,
-   "symbolsGone": 14
+   "packagesGone": 0,
+   "packagesAdded": 0,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.2.1-rc.4",
+   "to": "0.2.1-rc.5",
+   "packagesGone": 0,
+   "packagesAdded": 0,
+   "symbolsGone": 0
+  },
+  {
+   "from": "0.2.1-rc.5",
+   "to": "0.2.2-alpha.2",
+   "packagesGone": 0,
+   "packagesAdded": 25,
+   "symbolsGone": 16
   }
  ],
  "removedPackages": [
   {
-   "package": "@deepseek-ai/cordis-plugin-hmr",
-   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
-   "repairedBy": "@deepseek-ai/dsh-hmr",
-   "note": "HMR 插件收进了 dsh 自己的命名空间，能力没变。"
+   "package": "@deepseek-ai/dsh-host-apiproxy",
+   "removedAt": "0.0.1-rc.5→0.1.2-alpha.2",
+   "repairedBy": null,
+   "note": "0.1 起拆成 dsh-api-* 控制器与 dsh-sdk-* 两套，没有单一承接包，依赖 ctx.apiProxy 的插件必须改造。"
   },
   {
-   "package": "@deepseek-ai/dsh-agent-presets",
-   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
-   "repairedBy": "@deepseek-ai/dsh-agent-preset",
-   "note": "单复数改名。"
+   "package": "@deepseek-ai/dsh-subagent-claude-code",
+   "removedAt": "0.0.1-rc.5→0.1.2-alpha.2",
+   "repairedBy": null,
+   "note": "外部 CLI provider 下线；0.1 起 subagent 只保留 dsh-subagent 抽象 seam，provider 由调用方自己接。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-subagent-codex",
+   "removedAt": "0.0.1-rc.5→0.1.2-alpha.2",
+   "repairedBy": null,
+   "note": "随 claude-code provider 一起下线。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-tool-subagent-report",
+   "removedAt": "0.0.1-rc.5→0.1.2-alpha.2",
+   "repairedBy": null,
+   "note": "子任务上报工具下线，report 能力并入 ctx.subagents 的 continuation 机制。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent-spine-demo",
+   "removedAt": "0.1.2-alpha.2→0.1.2-alpha.3",
+   "repairedBy": null,
+   "note": "agent-spine 的示例包，只用于演示，从未是公开 API 的一部分。"
+  },
+  {
+   "package": "@deepseek-ai/node-addon-landlock-run",
+   "removedAt": "0.1.3-alpha.2→0.1.5-rc.3",
+   "repairedBy": "@deepseek-ai/node-addon-system",
+   "note": "Landlock 启动器并进 node-addon-system（它的描述就是「a Linux Landlock launcher and asynchronous POSIX flock」）。"
   },
   {
    "package": "@deepseek-ai/dsh-code-runtime",
-   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
+   "removedAt": "0.1.5-rc.3→0.1.6-alpha.1",
    "repairedBy": null,
    "note": "code-runtime 拆分后不再单独发包。"
   },
   {
    "package": "@deepseek-ai/dsh-code-runtime-worker-thread",
-   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
+   "removedAt": "0.1.5-rc.3→0.1.6-alpha.1",
    "repairedBy": null,
    "note": "随 code-runtime 一起下线。"
   },
   {
-   "package": "@deepseek-ai/dsh-settings-file",
-   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
-   "repairedBy": "@deepseek-ai/dsh-settings",
-   "note": "settings-file 被 dsh-settings 取代（0.2 起后者还带 profile 感知）。"
-  },
-  {
    "package": "@deepseek-ai/dsh-workflow-worker-thread",
-   "removedAt": "0.1.5-rc.3→0.1.7-rc.2",
+   "removedAt": "0.1.5-rc.3→0.1.6-alpha.1",
    "repairedBy": null,
    "note": "worker-thread 版工作流下线。"
   },
   {
+   "package": "@deepseek-ai/cordis-plugin-hmr",
+   "removedAt": "0.1.6-alpha.1→0.1.6-alpha.2",
+   "repairedBy": "@deepseek-ai/dsh-hmr",
+   "note": "HMR 插件收进了 dsh 自己的命名空间，能力没变。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent-presets",
+   "removedAt": "0.1.6-alpha.2→0.1.7-alpha.1",
+   "repairedBy": "@deepseek-ai/dsh-agent-preset",
+   "note": "单复数改名。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-experimental-agent-team-web-profile",
+   "removedAt": "0.1.6-alpha.2→0.1.7-alpha.1",
+   "repairedBy": "@deepseek-ai/dsh-experimental-agent-team-profile",
+   "note": "web profile 并回 profile 包（后者现在是「collaboration, tools, and Web UI in one bundle」）。"
+  },
+  {
+   "package": "@deepseek-ai/dsh-settings-file",
+   "removedAt": "0.1.6-alpha.2→0.1.7-alpha.1",
+   "repairedBy": "@deepseek-ai/dsh-settings",
+   "note": "settings-file 被 dsh-settings 取代（0.2 起后者还带 profile 感知）。"
+  },
+  {
    "package": "@deepseek-ai/dsh-experimental-schedule-bundle",
-   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "removedAt": "0.2.0-rc.2→0.2.1-alpha.1",
    "repairedBy": null,
    "note": "实验性 bundle 下线；定时任务改由 dsh-schedule（core）承担，没有一一对应的包。"
   },
   {
+   "package": "@deepseek-ai/dsh-invariants",
+   "removedAt": "0.2.0-rc.2→0.2.1-alpha.1",
+   "repairedBy": null,
+   "note": "不变量检查并入内部实现，不再作为公开包导出。"
+  },
+  {
    "package": "@deepseek-ai/dsh-hook-protocol",
-   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "removedAt": "0.2.1-alpha.1→0.2.1-alpha.2",
    "repairedBy": null,
    "note": "hooks 机制整体下线，0.2.1 没有替代包。依赖它的插件必须改造。"
   },
   {
    "package": "@deepseek-ai/dsh-hooks-claude-code",
-   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "removedAt": "0.2.1-alpha.1→0.2.1-alpha.2",
    "repairedBy": null,
    "note": "随 hook-protocol 一起下线。"
   },
   {
    "package": "@deepseek-ai/dsh-hooks-codex",
-   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "removedAt": "0.2.1-alpha.1→0.2.1-alpha.2",
    "repairedBy": null,
    "note": "随 hook-protocol 一起下线。"
   },
   {
-   "package": "@deepseek-ai/dsh-invariants",
-   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
-   "repairedBy": null,
-   "note": "不变量检查并入内部实现，不再作为公开包导出。"
-  },
-  {
    "package": "@deepseek-ai/dsh-subagent-in-process-driver",
-   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "removedAt": "0.2.1-alpha.1→0.2.1-alpha.2",
    "repairedBy": "@deepseek-ai/dsh-subagent",
    "note": "驱动实现并回 dsh-subagent 本体。"
   },
   {
    "package": "@deepseek-ai/dsh-webhook",
-   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "removedAt": "0.2.1-alpha.1→0.2.1-alpha.2",
    "repairedBy": null,
    "note": "webhook 子系统下线，没有替代包。"
   },
   {
    "package": "@deepseek-ai/dsh-webhook-github",
-   "removedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "removedAt": "0.2.1-alpha.1→0.2.1-alpha.2",
    "repairedBy": null,
    "note": "随 webhook 一起下线。"
   }
  ],
  "removedSymbols": [
   {
-   "package": "@deepseek-ai/dsh-agent-default-model",
+   "package": "@deepseek-ai/dsh-agent-presets",
    "symbols": {
-    "AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE": "0.1.5-rc.3→0.1.7-rc.2",
-    "AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA": "0.1.5-rc.3→0.1.7-rc.2"
+    "InvalidPresetIdError": "0.0.1-rc.5→0.1.2-alpha.2",
+    "PresetExistsError": "0.0.1-rc.5→0.1.2-alpha.2",
+    "PresetMountError": "0.0.1-rc.5→0.1.2-alpha.2",
+    "PresetNotWritableError": "0.0.1-rc.5→0.1.2-alpha.2",
+    "UnknownPresetError": "0.0.1-rc.5→0.1.2-alpha.2",
+    "resolveSessionPreset": "0.0.1-rc.5→0.1.2-alpha.2"
    }
   },
   {
-   "package": "@deepseek-ai/dsh-agent-instructions",
+   "package": "@deepseek-ai/dsh-api-remotes",
    "symbols": {
-    "renderWorkspaceContext": "0.1.5-rc.3→0.1.7-rc.2"
+    "ApiRemoteSessionNotFound": "0.0.1-rc.5→0.1.2-alpha.2",
+    "ApiRemoteSubagentSessionOwnership": "0.0.1-rc.5→0.1.2-alpha.2",
+    "apiRemoteSubagentOwnershipError": "0.0.1-rc.5→0.1.2-alpha.2",
+    "createApiRemoteAgentResolver": "0.0.1-rc.5→0.1.2-alpha.2",
+    "hasApiRemoteSubagentOwner": "0.0.1-rc.5→0.1.2-alpha.2",
+    "inspectApiRemoteSession": "0.0.1-rc.5→0.1.2-alpha.2"
    }
   },
   {
-   "package": "@deepseek-ai/dsh-agent-loop",
+   "package": "@deepseek-ai/dsh-attachment-local",
    "symbols": {
-    "AGENT_LOOP_SETTINGS_NAMESPACE": "0.1.5-rc.3→0.1.7-rc.2",
-    "AGENT_LOOP_SETTINGS_SCHEMA": "0.1.5-rc.3→0.1.7-rc.2"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-cordis-host-runner",
-   "symbols": {
-    "HOST_BUILTIN_INSPECTION": "0.1.5-rc.3→0.1.7-rc.2"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-headless",
-   "symbols": {
-    "internals": "0.1.5-rc.3→0.1.7-rc.2"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-llm",
-   "symbols": {
-    "offloadRequestImagesWithPolicy": "0.1.5-rc.3→0.1.7-rc.2",
-    "offloadedImagePrefixCount": "0.1.5-rc.3→0.1.7-rc.2"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-llm-deepseek",
-   "symbols": {
-    "DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET": "0.1.5-rc.3→0.1.7-rc.2",
-    "MAX_CHAT_IMAGE_BYTES": "0.1.5-rc.3→0.1.7-rc.2",
-    "apply": "0.1.5-rc.3→0.1.7-rc.2",
-    "inject": "0.1.5-rc.3→0.1.7-rc.2",
-    "name": "0.1.5-rc.3→0.1.7-rc.2",
-    "resolveRequestImagePolicy": "0.1.5-rc.3→0.1.7-rc.2"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-permission-presets",
-   "symbols": {
-    "PERMISSION_SETTINGS_NAMESPACE": "0.1.5-rc.3→0.1.7-rc.2"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-schedule",
-   "symbols": {
-    "allocateScheduleId": "0.1.5-rc.3→0.1.7-rc.2",
-    "apply": "0.1.5-rc.3→0.1.7-rc.2",
-    "inject": "0.1.5-rc.3→0.1.7-rc.2",
-    "name": "0.1.5-rc.3→0.1.7-rc.2",
-    "renderEveryReminderBatchFraming": "0.1.5-rc.3→0.1.7-rc.2",
-    "registerScheduleTools": "0.2.0-rc.2→0.2.1-rc.4"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-settings",
-   "symbols": {
-    "SettingsProvider": "0.1.5-rc.3→0.1.7-rc.2"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-shell",
-   "symbols": {
-    "SHELL_SETTINGS_NAMESPACE": "0.1.5-rc.3→0.1.7-rc.2"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-tool-cordis",
-   "symbols": {
-    "AttachmentError": "0.1.5-rc.3→0.1.7-rc.2",
-    "BackendRegistry": "0.1.5-rc.3→0.1.7-rc.2",
-    "DomainImpl": "0.1.5-rc.3→0.1.7-rc.2",
-    "LlmRuntime": "0.1.5-rc.3→0.1.7-rc.2",
-    "RemoteError": "0.1.5-rc.3→0.1.7-rc.2",
-    "Session": "0.1.5-rc.3→0.1.7-rc.2",
-    "SubagentRuntime": "0.1.5-rc.3→0.1.7-rc.2",
-    "SystemPrompt": "0.1.5-rc.3→0.1.7-rc.2",
-    "ToolRuntime": "0.1.5-rc.3→0.1.7-rc.2"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-tool-jobs",
-   "symbols": {
-    "statusLine": "0.1.5-rc.3→0.1.7-rc.2"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-agent-preset-registry",
-   "symbols": {
-    "livePresetMounts": "0.2.0-rc.2→0.2.1-rc.4",
-    "serviceForAgent": "0.2.0-rc.2→0.2.1-rc.4",
-    "standingMountFor": "0.2.0-rc.2→0.2.1-rc.4"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-app-boot",
-   "symbols": {
-    "HARNESS_SOURCE_SECTION": "0.2.0-rc.2→0.2.1-rc.4",
-    "addHarnessSourceSection": "0.2.0-rc.2→0.2.1-rc.4"
+    "detectImage": "0.0.1-rc.5→0.1.2-alpha.2"
    }
   },
   {
    "package": "@deepseek-ai/dsh-client-connection",
    "symbols": {
-    "OperatorPeer": "0.2.0-rc.2→0.2.1-rc.4"
+    "HOST_EVENTS_PATH": "0.0.1-rc.5→0.1.2-alpha.2",
+    "MUX_EVENTS_PATH": "0.0.1-rc.5→0.1.2-alpha.2",
+    "OperatorPeer": "0.2.1-alpha.2→0.2.1-alpha.3"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-modules",
+   "symbols": {
+    "injectBootManifest": "0.0.1-rc.5→0.1.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-ui-attachment",
+   "symbols": {
+    "AttachmentRail": "0.0.1-rc.5→0.1.2-alpha.2",
+    "DropOverlay": "0.0.1-rc.5→0.1.2-alpha.2",
+    "ImageGallery": "0.0.1-rc.5→0.1.2-alpha.2",
+    "ImageLightbox": "0.0.1-rc.5→0.1.2-alpha.2",
+    "MessageImage": "0.0.1-rc.5→0.1.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-ui-settings-general",
+   "symbols": {
+    "WELCOME_NOTICE_ACK_FIELD": "0.0.1-rc.5→0.1.2-alpha.2",
+    "WELCOME_NOTICE_COPY": "0.0.1-rc.5→0.1.2-alpha.2",
+    "WELCOME_NOTICE_SETTINGS_NAMESPACE": "0.0.1-rc.5→0.1.2-alpha.2",
+    "WELCOME_NOTICE_VERSION": "0.0.1-rc.5→0.1.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-llm",
+   "symbols": {
+    "CallId": "0.0.1-rc.5→0.1.2-alpha.2",
+    "assertNever": "0.0.1-rc.5→0.1.2-alpha.2",
+    "deepFreeze": "0.0.1-rc.5→0.1.2-alpha.2",
+    "offloadRequestImagesWithPolicy": "0.1.5-rc.3→0.1.6-alpha.1",
+    "offloadedImagePrefixCount": "0.1.5-rc.3→0.1.6-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-permission-presets",
+   "symbols": {
+    "applyKnobEvent": "0.0.1-rc.5→0.1.2-alpha.2",
+    "effectivePermissionPreset": "0.0.1-rc.5→0.1.2-alpha.2",
+    "PERMISSION_SETTINGS_NAMESPACE": "0.1.6-alpha.2→0.1.7-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-persona",
+   "symbols": {
+    "PERSONA_ORDER": "0.0.1-rc.5→0.1.2-alpha.2",
+    "PERSONA_SECTION": "0.1.2-rc.1→0.1.3-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-plan-mode",
+   "symbols": {
+    "foldPlanMode": "0.0.1-rc.5→0.1.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-sandbox-policy",
+   "symbols": {
+    "effectiveSandboxMode": "0.0.1-rc.5→0.1.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-sandbox-windows-acl",
+   "symbols": {
+    "Win32Error": "0.0.1-rc.5→0.1.2-alpha.2",
+    "quoteArg": "0.0.1-rc.5→0.1.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-session",
+   "symbols": {
+    "isJsonValue": "0.0.1-rc.5→0.1.2-alpha.2",
+    "lastActivityTime": "0.0.1-rc.5→0.1.2-alpha.2",
+    "snapshotJsonValue": "0.0.1-rc.5→0.1.2-alpha.2",
+    "decodeStorageRecord": "0.1.2-rc.1→0.1.3-alpha.2",
+    "packChunkRuns": "0.1.2-rc.1→0.1.3-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-session-title",
+   "symbols": {
+    "collectSessionTitleMessages": "0.0.1-rc.5→0.1.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-settings",
+   "symbols": {
+    "deepEqualJson": "0.0.1-rc.5→0.1.2-alpha.2",
+    "installSettingsSection": "0.0.1-rc.5→0.1.2-alpha.2",
+    "settingsNamespace": "0.0.1-rc.5→0.1.2-alpha.2",
+    "SettingsProvider": "0.1.6-alpha.2→0.1.7-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-system-prompt",
+   "symbols": {
+    "PERSONA_ORDER": "0.0.1-rc.5→0.1.2-alpha.2",
+    "PERSONA_SECTION": "0.1.2-rc.1→0.1.3-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-tool-cordis",
+   "symbols": {
+    "ApprovalService": "0.0.1-rc.5→0.1.2-alpha.2",
+    "Inbox": "0.0.1-rc.5→0.1.2-alpha.2",
+    "SessionPreparation": "0.1.2-rc.1→0.1.3-alpha.2",
+    "AttachmentError": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "BackendRegistry": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "DomainImpl": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "enum": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "LlmRuntime": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "RemoteError": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "Session": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "SubagentRuntime": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "SystemPrompt": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "ToolRuntime": "0.1.6-alpha.2→0.1.7-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-tool-web",
+   "symbols": {
+    "parseSearchArgs": "0.0.1-rc.5→0.1.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-typert-protocol",
+   "symbols": {
+    "TypertLookupFailure": "0.0.1-rc.5→0.1.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-user-approval",
+   "symbols": {
+    "effectiveApprovalPolicy": "0.0.1-rc.5→0.1.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-attachment",
+   "symbols": {
+    "admitPromptContent": "0.1.2-rc.1→0.1.3-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-message-feedback",
+   "symbols": {
+    "messageFeedbackDomainSpec": "0.1.2-rc.1→0.1.3-alpha.2",
+    "messageFeedbackItemSchema": "0.1.2-rc.1→0.1.3-alpha.2",
+    "messageFeedbackRatingSchema": "0.1.2-rc.1→0.1.3-alpha.2",
+    "messageFeedbackRowSchema": "0.1.2-rc.1→0.1.3-alpha.2",
+    "messageFeedbackSessionIdentitySchema": "0.1.2-rc.1→0.1.3-alpha.2",
+    "messageFeedbackVersionSchema": "0.1.2-rc.1→0.1.3-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-session-persistence",
+   "symbols": {
+    "DEFAULT_PREPARED_SESSION_CACHE_SIZE": "0.1.2-rc.1→0.1.3-alpha.2",
+    "DEFAULT_WRITE_BATCH_MAX_DELAY_MS": "0.1.2-rc.1→0.1.3-alpha.2",
+    "MAX_WRITE_BATCH_DELAY_MS": "0.1.2-rc.1→0.1.3-alpha.2",
+    "PersistenceCoordinator": "0.1.2-rc.1→0.1.3-alpha.2"
    }
   },
   {
    "package": "@deepseek-ai/dsh-session-persistence-jsonl",
    "symbols": {
-    "default": "0.2.0-rc.2→0.2.1-rc.4"
-   }
-  },
-  {
-   "package": "@deepseek-ai/dsh-session-title-llm",
-   "symbols": {
-    "generateSessionTitleWithLlm": "0.2.0-rc.2→0.2.1-rc.4",
-    "registerSessionTitleLlmProvider": "0.2.0-rc.2→0.2.1-rc.4"
+    "JsonlSessionPersistence": "0.1.2-rc.1→0.1.3-alpha.2",
+    "default": "0.2.1-alpha.2→0.2.1-alpha.3"
    }
   },
   {
    "package": "@deepseek-ai/dsh-subagent",
    "symbols": {
-    "resolveChildCwd": "0.2.0-rc.2→0.2.1-rc.4",
-    "settleRun": "0.2.0-rc.2→0.2.1-rc.4",
-    "validateConfiguredCwd": "0.2.0-rc.2→0.2.1-rc.4"
+    "seedDescriptorTurn": "0.1.2-rc.1→0.1.3-alpha.2",
+    "resolveChildCwd": "0.2.1-alpha.1→0.2.1-alpha.2",
+    "settleRun": "0.2.1-alpha.1→0.2.1-alpha.2",
+    "validateConfiguredCwd": "0.2.1-alpha.1→0.2.1-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent",
+   "symbols": {
+    "Inbox": "0.1.3-alpha.2→0.1.5-rc.3"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent-instructions",
+   "symbols": {
+    "renderWorkspaceContext": "0.1.5-rc.3→0.1.6-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-headless",
+   "symbols": {
+    "internals": "0.1.5-rc.3→0.1.6-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-llm-deepseek",
+   "symbols": {
+    "DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET": "0.1.5-rc.3→0.1.6-alpha.1",
+    "MAX_CHAT_IMAGE_BYTES": "0.1.5-rc.3→0.1.6-alpha.1",
+    "resolveRequestImagePolicy": "0.1.5-rc.3→0.1.6-alpha.1",
+    "MESSAGES_BASE_URL": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "apply": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "inject": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "name": "0.1.6-alpha.2→0.1.7-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent-default-model",
+   "symbols": {
+    "AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA": "0.1.6-alpha.2→0.1.7-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent-loop",
+   "symbols": {
+    "AGENT_LOOP_SETTINGS_NAMESPACE": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "AGENT_LOOP_SETTINGS_SCHEMA": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "turnBoundaryProjectionDefinition": "0.2.1-rc.5→0.2.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-ui-plugin-manager",
+   "symbols": {
+    "apply": "0.1.6-alpha.2→0.1.7-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-ui-primitives",
+   "symbols": {
+    "IconAgentPresetOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconAlarmClockOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconApiOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconArchiveOutline20": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconBranchOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconBrowseOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconCheckOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconCheckOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconChecklistOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconChevronDownOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconChevronLeftOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconChevronRightOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconChevronUpOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconClockOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconCloseFill14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconCloseOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconCodeOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconCompactOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconContextInjectionOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconCopyOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconCordisPluginOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconDarkOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconDataOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconDatabaseOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconDislikeFill16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconDislikeOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconDownloadOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconEditOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconEllipsisOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconEnhanceOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconFolderClose16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconFolderOpen16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconFolderOpenOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconFollowsystemOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconFullscreenOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconGaugeOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconGlobeOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconGoalOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconInfoOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconInspectOutline12": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconLightOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconLikeFill16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconLikeOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconLinkOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconLinkOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconListPenOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconLoadingOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconNewChatOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconPanelLeftOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconPaperPlaneOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconPaperclipOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconPauseOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconPersonalizationOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconPlanOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconPlayOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconPluginPinwheelOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconPlusOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconProjectAddOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconQuestionOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconQueueOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconRefreshOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconRefreshOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconRightUpOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconRightUpOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconSearchOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconSendOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconSettingsOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconSettingsOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconShareOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconShieldOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconSkillOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconSparkle16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconStopFill16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconThinkOutline14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconThinkOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconTrashOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconTreeCorner8x10": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconTriangleRightFill14": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconUserOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconWarningOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "IconWrapLinesOutline16": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "LinkIcon": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "OnboardingSurface": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "ReferenceIcon": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "SHIELD_OUTLINE_STROKE": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "GuideArtworkBrowser": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "GuideArtworkFiles": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "IconArchiveOffOutlineMedium": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "IconArchiveOffOutlineRegular": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "IconUsersOutlineMedium": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "IconUsersOutlineRegular": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "ImageLightbox": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "MenuSurface": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "ShortcutKeys": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "closeTopModal": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "focusWithoutRing": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "isBehindModal": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "modalSelector": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "observeComposition": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "useModalLayer": "0.1.7-alpha.1→0.1.7-alpha.2",
+    "projectUserText": "0.2.1-alpha.2→0.2.1-alpha.3"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-cordis-host-runner",
+   "symbols": {
+    "HOST_BUILTIN_INSPECTION": "0.1.6-alpha.2→0.1.7-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-schedule",
+   "symbols": {
+    "allocateScheduleId": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "apply": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "inject": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "name": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "renderEveryReminderBatchFraming": "0.1.6-alpha.2→0.1.7-alpha.1",
+    "registerScheduleTools": "0.2.0-rc.2→0.2.1-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-shell",
+   "symbols": {
+    "SHELL_SETTINGS_NAMESPACE": "0.1.6-alpha.2→0.1.7-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-tool-jobs",
+   "symbols": {
+    "statusLine": "0.1.6-alpha.2→0.1.7-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-app-boot",
+   "symbols": {
+    "HARNESS_SOURCE_SECTION": "0.2.1-alpha.2→0.2.1-alpha.3",
+    "addHarnessSourceSection": "0.2.1-alpha.2→0.2.1-alpha.3",
+    "DEFAULT_PROFILE_BUNDLES": "0.2.1-rc.5→0.2.2-alpha.2",
+    "OFFICIAL_ON_DEMAND_CATALOG": "0.2.1-rc.5→0.2.2-alpha.2",
+    "ON_DEMAND_BUNDLES": "0.2.1-rc.5→0.2.2-alpha.2",
+    "OPTIONAL_BUNDLES": "0.2.1-rc.5→0.2.2-alpha.2",
+    "PROFILE_TEMPLATES": "0.2.1-rc.5→0.2.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-agent-preset-registry",
+   "symbols": {
+    "livePresetMounts": "0.2.0-rc.2→0.2.1-alpha.1",
+    "serviceForAgent": "0.2.0-rc.2→0.2.1-alpha.1",
+    "standingMountFor": "0.2.0-rc.2→0.2.1-alpha.1"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-session-title-llm",
+   "symbols": {
+    "generateSessionTitleWithLlm": "0.2.1-alpha.1→0.2.1-alpha.2",
+    "registerSessionTitleLlmProvider": "0.2.1-alpha.1→0.2.1-alpha.2"
    }
   },
   {
    "package": "@deepseek-ai/dsh-web-app",
    "symbols": {
-    "resolveLanTrust": "0.2.0-rc.2→0.2.1-rc.4"
+    "resolveLanTrust": "0.2.1-alpha.1→0.2.1-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-api-session-controller",
+   "symbols": {
+    "buildModelCatalog": "0.2.1-rc.5→0.2.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-ui-trajectory",
+   "symbols": {
+    "apply": "0.2.1-rc.5→0.2.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-host-frontend-static",
+   "symbols": {
+    "serveStatic": "0.2.1-rc.5→0.2.2-alpha.2"
+   }
+  },
+  {
+   "package": "@deepseek-ai/dsh-tools",
+   "symbols": {
+    "CodeRunFailedError": "0.2.1-rc.5→0.2.2-alpha.2",
+    "TOOL_RUNTIME_SCHEDULER": "0.2.1-rc.5→0.2.2-alpha.2",
+    "defineContentToolFixture": "0.2.1-rc.5→0.2.2-alpha.2",
+    "jsonSchemaToPy": "0.2.1-rc.5→0.2.2-alpha.2",
+    "jsonSchemaToTs": "0.2.1-rc.5→0.2.2-alpha.2",
+    "renderToolsSdk": "0.2.1-rc.5→0.2.2-alpha.2",
+    "renderToolsSdkPy": "0.2.1-rc.5→0.2.2-alpha.2"
    }
   }
  ],
  "clientPackages": [
   {
-   "package": "@deepseek-ai/dsh-client-store",
-   "changedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "package": "@deepseek-ai/dsh-client-runtime",
+   "changedAt": "0.0.1-rc.5→0.1.2-alpha.2",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-schema-form",
+   "changedAt": "0.0.1-rc.5→0.1.2-alpha.2",
    "resolvableBefore": true,
    "resolvableAfter": false
   },
   {
    "package": "@deepseek-ai/dsh-client-ui-primitives",
-   "changedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "changedAt": "0.2.1-alpha.3→0.2.1-alpha.4",
    "resolvableBefore": true,
    "resolvableAfter": false
   },
   {
    "package": "@deepseek-ai/dsh-client-ui-slots",
-   "changedAt": "0.2.0-rc.2→0.2.1-rc.4",
+   "changedAt": "0.2.1-alpha.3→0.2.1-alpha.4",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-web",
+   "changedAt": "0.0.1-rc.5→0.1.2-alpha.2",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-web-react",
+   "changedAt": "0.0.1-rc.5→0.1.2-alpha.2",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-ui-settings-unarchive-sessions",
+   "changedAt": "0.1.6-alpha.2→0.1.7-alpha.1",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-shortcuts",
+   "changedAt": "0.1.7-alpha.1→0.1.7-alpha.2",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-ui-shortcuts",
+   "changedAt": "0.1.7-alpha.1→0.1.7-alpha.2",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-store",
+   "changedAt": "0.2.1-alpha.3→0.2.1-alpha.4",
+   "resolvableBefore": true,
+   "resolvableAfter": false
+  },
+  {
+   "package": "@deepseek-ai/dsh-client-ui-deepseek-model-label-1017",
+   "changedAt": "0.2.1-rc.5→0.2.2-alpha.2",
    "resolvableBefore": true,
    "resolvableAfter": false
   }
